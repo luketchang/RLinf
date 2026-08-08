@@ -335,6 +335,34 @@ RLinf 框架针对GR00T-N1.6采用了高度解耦的两阶段训练架构：
 
 - 在当前 RLinf 实现中，LIBERO 的原始 state 在转换前是 8 维，而官方 N1.7 模型内部使用的是更大的通用 state/action 表示。
 - 当前 LIBERO 示例使用 ``embodiment_tag: libero_sim``，并在共享的环境动作工具中应用 LIBERO 的 gripper 约定。
+- RLinf 还提供可复用的 ``model/gr00t_n1d7_so101`` 模型配置和
+  ``obs_converter_type: so101`` 适配器，用于采用 NVIDIA ``NEW_EMBODIMENT``
+  数据配置训练的 SO-100/SO-101 checkpoint。兼容环境必须输出
+  ``main_images``、``wrist_images``、六维 LeRobot ``states`` 和
+  ``task_descriptions``。
+- SO-101 适配器严格遵循官方模态划分：``state.single_arm`` 中包含五个机械臂
+  关节，``state.gripper`` 中包含一个夹爪关节，输入图像为 ``video.front`` 和
+  ``video.wrist``，动作预测时域为 16 步。N1.7 processor 会先把相对机械臂动作
+  解码为绝对目标，随后适配器按 ``[arm_0, ..., arm_4, gripper]`` 返回，不处理
+  仿真器专用单位或关节限制；这些转换由环境负责。
+- 随附的 SO-101 模型配置将 Flow-SDE 探索保留在归一化模型空间，并关闭 RLinf
+  通用的解码后动作噪声。后者会把动作限制到 ``[-1, 1]``，因此不能用于绝对
+  LeRobot 电机目标。
+- 该功能是模型 I/O 适配器，并不包含完整的 SO-101 任务。IsaacLab 或其他仿真
+  环境仍需提供场景、奖励、终止条件，以及仿真关节与 LeRobot 电机值之间的转换。
+
+在具身任务配置中选择该适配器，并指定一个 processor sidecar 中包含
+``new_embodiment`` SO-101 统计信息与模态配置的 N1.7 checkpoint：
+
+.. code:: yaml
+
+   defaults:
+      - model/gr00t_n1d7_so101@actor.model
+
+   actor:
+      model:
+         model_path: "/path/to/GR00T-N1.7-SO101"
+         backbone_model_path: "/path/to/Cosmos-Reason2-2B"
 
 **5. Checkpoint 与 processor 契约**
 

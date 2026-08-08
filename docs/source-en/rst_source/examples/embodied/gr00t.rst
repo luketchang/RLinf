@@ -338,6 +338,38 @@ After fine-tuning, the system generates ``metadata.json`` and other statistical 
 
 - The current raw LIBERO state in RLinf is 8-dim before conversion, while the official N1.7 model uses a larger universal state/action representation internally.
 - The current LIBERO example uses ``embodiment_tag: libero_sim`` and applies the LIBERO gripper convention in the shared environment action utilities.
+- RLinf also provides the reusable ``model/gr00t_n1d7_so101`` model config and
+  ``obs_converter_type: so101`` adapter for SO-100/SO-101 checkpoints trained with
+  NVIDIA's ``NEW_EMBODIMENT`` data config. A compatible environment must emit
+  ``main_images``, ``wrist_images``, six-value LeRobot ``states``, and
+  ``task_descriptions``.
+- The SO-101 adapter follows the official modality split exactly: five arm joints
+  in ``state.single_arm``, one joint in ``state.gripper``, ``video.front`` and
+  ``video.wrist`` RGB inputs, and a 16-step action horizon. The N1.7 processor
+  decodes relative arm actions into absolute targets; the adapter then returns
+  ``[arm_0, ..., arm_4, gripper]`` without applying simulator-specific units or
+  joint limits. Those conversions remain the environment's responsibility.
+- The supplied SO-101 model config keeps Flow-SDE exploration in normalized
+  model space and disables RLinf's generic post-decode action noise. That helper
+  clamps to ``[-1, 1]`` and therefore must not be applied to absolute LeRobot
+  motor targets.
+- This is a model I/O adapter, not a bundled SO-101 task. An IsaacLab or other
+  simulator task must still provide scene setup, rewards, termination, and the
+  conversion between simulator joints and LeRobot motor values.
+
+Select the adapter from an embodied task config and point it at an N1.7
+checkpoint whose processor sidecars contain the ``new_embodiment`` SO-101
+statistics and modality config:
+
+.. code:: yaml
+
+   defaults:
+      - model/gr00t_n1d7_so101@actor.model
+
+   actor:
+      model:
+         model_path: "/path/to/GR00T-N1.7-SO101"
+         backbone_model_path: "/path/to/Cosmos-Reason2-2B"
 
 **5. Checkpoint and Processor Contract**
 

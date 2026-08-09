@@ -681,6 +681,36 @@ jobs:
           uv cache prune
           rm -rf /tmp/tmp*
 
+  embodied-gr00t-n1d7-isaaclab-install-test:
+    runs-on: embodied
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Create embodied environment
+        run: |
+          unset UV_DEFAULT_INDEX
+          export UV_PATH=/workspace/dataset/.uv
+          export UV_LINK_MODE=symlink
+          export UV_CACHE_DIR=/workspace/dataset/.uv_cache
+          export UV_PYTHON_INSTALL_DIR=/workspace/dataset/.uv_python
+          export ISAAC_LAB_PATH=/workspace/dataset/IsaacLab
+          export GR00T_PATH=/workspace/dataset/Isaac-GR00T-N1.7
+          bash requirements/install.sh embodied --model gr00t_n1d7 --env isaaclab
+
+      - name: GR00T N1.7 IsaacLab import test
+        run: |
+          unset PYTHONPATH
+          source .venv/bin/activate
+          source /workspace/dataset/isaac-sim-5.1/setup_conda_env.sh
+          python -c "import gr00t, isaaclab; from rlinf.models.embodiment.gr00t.simulation_io import OBS_CONVERSION; assert 'so101' in OBS_CONVERSION"
+
+      - name: Clean up
+        run: |
+          rm -rf .venv
+          uv cache prune
+          rm -rf /tmp/tmp*
+
   embodied-openpi-isaaclab-test:
     runs-on: embodied
     steps:

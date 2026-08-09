@@ -1799,6 +1799,14 @@ install_gr00t_n1d7_model() {
             install_maniskill_libero_env
             install_flash_attn
             ;;
+        isaaclab)
+            install_isaaclab_env
+            # Isaac Lab may replace Torch and shared Python dependencies. Build
+            # flash-attn against the resulting Torch runtime, then restore the
+            # N1.7 package contract without replacing Isaac Lab's Torch build.
+            install_flash_attn
+            uv pip install -r "$SCRIPT_DIR/embodied/models/gr00t_n1d7.txt"
+            ;;
         *)
             echo "Environment '$ENV_NAME' is not yet validated for Gr00t N1.7." >&2
             exit 1

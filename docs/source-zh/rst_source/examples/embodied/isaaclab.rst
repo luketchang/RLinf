@@ -102,6 +102,9 @@
    # GR00T N1.5
    source switch_env gr00t
 
+   # GR00T N1.7
+   # source switch_env gr00t_n1d7
+
    # OpenPI π₀.₅
    # source switch_env openpi
 
@@ -116,6 +119,10 @@
    # GR00T N1.5
    bash requirements/install.sh embodied --model gr00t --env isaaclab
    source .venv/bin/activate
+
+   # GR00T N1.7
+   # bash requirements/install.sh embodied --model gr00t_n1d7 --env isaaclab
+   # source .venv/bin/activate
 
    # OpenPI π₀.₅
    # bash requirements/install.sh embodied --model openpi --env isaaclab

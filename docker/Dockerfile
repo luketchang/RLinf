@@ -310,11 +310,13 @@ RUN echo "source ${UV_PATH}/openpi/bin/activate" >> ~/.bashrc
 ##################################################################################################
 FROM embodied-common-image AS embodied-isaaclab-image
 
-# Clone the IsaacLab env repo once into a shared path; both models below reuse it.
+# Clone the IsaacLab env repo once into a shared path; all model venvs reuse it.
 ENV ISAAC_LAB_PATH=/opt/envs/isaaclab
 
-# Install gr00t env, and openpi env
+# Install GR00T N1.5, GR00T N1.7, and OpenPI in isolated venvs. Keep these
+# installs in one layer so uv can safely hardlink from its build cache.
 RUN bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv gr00t --model gr00t --env isaaclab && \
+    bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv gr00t_n1d7 --model gr00t_n1d7 --env isaaclab && \
     bash requirements/install.sh ${INSTALL_MIRROR_OPTION} --platform ${RLINF_PLATFORM} embodied --venv openpi --model openpi --env isaaclab
 
 # Set default env

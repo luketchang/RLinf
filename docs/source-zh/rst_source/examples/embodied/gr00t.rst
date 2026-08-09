@@ -341,8 +341,10 @@ RLinf 框架针对GR00T-N1.6采用了高度解耦的两阶段训练架构：
   ``main_images``、``wrist_images``、六维 LeRobot ``states`` 和
   ``task_descriptions``。
 - SO-101 适配器严格遵循官方模态划分：``state.single_arm`` 中包含五个机械臂
-  关节，``state.gripper`` 中包含一个夹爪关节，输入图像为 ``video.front`` 和
-  ``video.wrist``，动作预测时域为 16 步。N1.7 processor 会先把相对机械臂动作
+  关节，``state.gripper`` 中包含一个夹爪关节，并从 checkpoint processor 读取
+  两个 RGB 模态名称。因此 ``front``/``wrist`` 和 LeRobot 训练所得的
+  ``external_D455``/``ego`` 均无需专用环境代码即可使用；动作预测时域为 16 步。
+  N1.7 processor 会先把相对机械臂动作
   解码为绝对目标，随后适配器按 ``[arm_0, ..., arm_4, gripper]`` 返回，不处理
   仿真器专用单位或关节限制；这些转换由环境负责。
 - 随附的 SO-101 模型配置将 Flow-SDE 探索保留在归一化模型空间，并关闭 RLinf
@@ -368,6 +370,31 @@ RLinf 框架针对GR00T-N1.6采用了高度解耦的两阶段训练架构：
 
 - RLinf 直接从 checkpoint 目录加载官方 processor。
 - 在离线或镜像环境中，``backbone_model_path`` 可将官方 backbone id 重定向到本地 ``Cosmos-Reason2-2B`` snapshot。
+- LeRobot 把同一个 N1.7 模块存放在 ``_groot_model.`` policy wrapper 下，并使用
+  LeRobot processor pipeline 保存预处理。当 LeRobot SFT checkpoint 作为 RL
+  起点时，使用严格转换器：
+
+.. code:: bash
+
+   python -m rlinf.utils.ckpt_convertor.gr00t_n1d7.convert lerobot_to_rlinf \
+      --input-model /checkpoints/lerobot/pretrained_model \
+      --native-reference /checkpoints/nvidia/GR00T-N1.7-3B \
+      --output-model /checkpoints/rlinf
+
+  native reference 只提供官方配置与 processor schema；策略权重来自 LeRobot
+  checkpoint。转换器移除 wrapper prefix、恢复 tied embedding alias，并转换训练时
+  的模态与统计信息。
+- 真机部署时，以 RL 训练起点的同一个 LeRobot SFT checkpoint 为契约导出：
+
+.. code:: bash
+
+   python -m rlinf.utils.ckpt_convertor.gr00t_n1d7.convert rlinf_to_lerobot \
+      --input-model /runs/step_000100 \
+      --lerobot-reference /checkpoints/lerobot/pretrained_model \
+      --output-model /checkpoints/lerobot-step-000100
+
+  导出采用 fail-closed 校验：缺失、shape 变化或未知额外 tensor 会直接报错；已知
+  的 RL-only value/exploration head 会被明确移除。
 
 **6. 本仓库中的 RL 训练契约**
 

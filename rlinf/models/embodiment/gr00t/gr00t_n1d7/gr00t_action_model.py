@@ -15,6 +15,7 @@
 import json
 import random
 from contextlib import contextmanager, nullcontext
+from functools import partial
 from pathlib import Path
 from typing import Any, Literal, Optional, Union
 from unittest.mock import patch
@@ -33,6 +34,7 @@ from rlinf.models.embodiment.base_policy import BasePolicy, ForwardType
 from rlinf.models.embodiment.gr00t.simulation_io import (
     ACTION_CONVERSION_N1D7,
     OBS_CONVERSION,
+    convert_so101_obs_to_gr00t_format,
 )
 from rlinf.models.embodiment.gr00t.utils import (
     squeeze_dict_values,
@@ -828,6 +830,12 @@ class GR00T_N1_7_ForRLActionPrediction(Gr00tN1d7, BasePolicy):
         self.action_convert_fn = ACTION_CONVERSION_N1D7[obs_converter_type]
         exp_cfg_path = self.model_path / "experiment_cfg"
         self._load_metadata(exp_cfg_path)
+        if obs_converter_type in ("so100", "so101"):
+            video_keys = self._get_embodiment_video_keys()
+            self.obs_convert_fn = partial(
+                convert_so101_obs_to_gr00t_format,
+                video_modality_keys=video_keys,
+            )
         self.action_dim = _resolve_env_action_dim(
             getattr(config, "action_dim", self.valid_action_dim),
             self.valid_action_dim,
@@ -843,6 +851,24 @@ class GR00T_N1_7_ForRLActionPrediction(Gr00tN1d7, BasePolicy):
             "Forced FSDP _no_split_modules into config: %s",
             self.config.no_split_modules,
         )
+
+    def _get_embodiment_video_keys(self) -> list[str]:
+        """Read the camera contract for the active embodiment processor."""
+        tag = self.embodiment_tag.value
+        configs = self._modality_config
+        try:
+            modality = configs[tag]
+        except (KeyError, TypeError) as exc:
+            raise ValueError(f"Processor has no modality config for {tag!r}") from exc
+        video = modality.get("video") if isinstance(modality, dict) else modality.video
+        keys = (
+            video.get("modality_keys")
+            if isinstance(video, dict)
+            else video.modality_keys
+        )
+        if not keys:
+            raise ValueError(f"Processor modality config for {tag!r} has no cameras")
+        return list(keys)
 
     def _load_modality_processor(
         self,

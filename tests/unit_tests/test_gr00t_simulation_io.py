@@ -34,6 +34,7 @@ ACTION_CONVERSION_N1D7 = _SIMULATION_IO.ACTION_CONVERSION_N1D7
 OBS_CONVERSION = _SIMULATION_IO.OBS_CONVERSION
 convert_so101_obs_to_gr00t_format = _SIMULATION_IO.convert_so101_obs_to_gr00t_format
 convert_to_so101_action_n1d7 = _SIMULATION_IO.convert_to_so101_action_n1d7
+resolve_so101_camera_keys = _SIMULATION_IO.resolve_so101_camera_keys
 
 
 def _make_so101_observation(batch_size: int = 2) -> dict:
@@ -105,6 +106,29 @@ def test_so101_observation_conversion_preserves_uint8_values():
     np.testing.assert_array_equal(
         converted["video.front"][0, 0, 0, 0], np.array([0, 1, 1])
     )
+
+
+def test_so101_observation_conversion_uses_checkpoint_camera_names():
+    converted = convert_so101_obs_to_gr00t_format(
+        _make_so101_observation(),
+        video_modality_keys=("ego", "external_D455"),
+    )
+
+    assert "video.ego" in converted
+    assert "video.external_D455" in converted
+    np.testing.assert_array_equal(
+        converted["video.ego"],
+        _make_so101_observation()["wrist_images"].numpy()[:, None],
+    )
+    np.testing.assert_array_equal(
+        converted["video.external_D455"],
+        _make_so101_observation()["main_images"].numpy()[:, None],
+    )
+
+
+def test_so101_camera_resolution_rejects_ambiguous_names():
+    with pytest.raises(ValueError, match="Could not identify"):
+        resolve_so101_camera_keys(("camera_a", "camera_b"))
 
 
 @pytest.mark.parametrize(

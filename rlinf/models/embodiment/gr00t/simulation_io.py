@@ -99,6 +99,8 @@ def _normalize_task_descriptions(value: Any, batch_size: int) -> list[str]:
 
 def convert_so101_obs_to_gr00t_format(
     env_obs: Mapping[str, Any],
+    *,
+    video_modality_keys: Sequence[str] = ("front", "wrist"),
 ) -> dict[str, Any]:
     """Convert batched SO-101 observations to the GR00T N1.7 schema.
 
@@ -162,14 +164,44 @@ def convert_so101_obs_to_gr00t_format(
     )
     states = states.astype(np.float32, copy=False)
 
+    camera_keys = resolve_so101_camera_keys(video_modality_keys)
     return {
         # GR00T expects an explicit observation-time dimension.
-        "video.front": front_images[:, None],
-        "video.wrist": wrist_images[:, None],
+        f"video.{camera_keys['main_images']}": front_images[:, None],
+        f"video.{camera_keys['wrist_images']}": wrist_images[:, None],
         "state.single_arm": states[:, None, :5],
         "state.gripper": states[:, None, 5:6],
         "annotation.human.task_description": task_descriptions,
     }
+
+
+def resolve_so101_camera_keys(video_modality_keys: Sequence[str]) -> dict[str, str]:
+    """Map checkpoint camera modality names to simulator image fields.
+
+    GR00T processors retain the camera names used during SFT. NVIDIA's generic
+    SO-101 examples use ``front``/``wrist``, while LeRobot recordings often use
+    names such as ``external_D455``/``ego``. Inferring this once from processor
+    metadata avoids checkpoint-specific observation adapters.
+    """
+    keys = list(video_modality_keys)
+    if len(keys) != 2 or len(set(keys)) != 2:
+        raise ValueError(f"Expected exactly two distinct SO-101 cameras, got {keys}.")
+
+    def camera_role(key: str) -> str | None:
+        normalized = key.lower()
+        if any(token in normalized for token in ("wrist", "ego", "hand")):
+            return "wrist_images"
+        if any(token in normalized for token in ("external", "front", "main", "d455")):
+            return "main_images"
+        return None
+
+    roles = {key: camera_role(key) for key in keys}
+    if set(roles.values()) != {"main_images", "wrist_images"}:
+        raise ValueError(
+            "Could not identify one external and one wrist camera from processor "
+            f"modality keys {keys}. Use descriptive camera names."
+        )
+    return {role: key for key, role in roles.items()}
 
 
 def convert_libero_obs_to_gr00t_format(env_obs):

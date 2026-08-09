@@ -344,8 +344,10 @@ After fine-tuning, the system generates ``metadata.json`` and other statistical 
   ``main_images``, ``wrist_images``, six-value LeRobot ``states``, and
   ``task_descriptions``.
 - The SO-101 adapter follows the official modality split exactly: five arm joints
-  in ``state.single_arm``, one joint in ``state.gripper``, ``video.front`` and
-  ``video.wrist`` RGB inputs, and a 16-step action horizon. The N1.7 processor
+  in ``state.single_arm``, one joint in ``state.gripper``, two RGB inputs whose
+  names are read from the checkpoint processor, and a 16-step action horizon.
+  This supports both ``front``/``wrist`` and trained LeRobot camera names such as
+  ``external_D455``/``ego`` without checkpoint-specific environment code. The N1.7 processor
   decodes relative arm actions into absolute targets; the adapter then returns
   ``[arm_0, ..., arm_4, gripper]`` without applying simulator-specific units or
   joint limits. Those conversions remain the environment's responsibility.
@@ -376,6 +378,33 @@ statistics and modality config:
 - RLinf loads the official processor directly from the checkpoint directory.
 - When running in offline or mirrored environments, ``backbone_model_path`` can redirect the official backbone id to a local ``Cosmos-Reason2-2B`` snapshot.
 - The current temporary official-release download command may omit ``experiment_cfg/metadata.json``; that is acceptable for now because RLinf has a fallback path, but keeping metadata is still recommended when available.
+- LeRobot stores the same N1.7 module below a ``_groot_model.`` policy-wrapper
+  prefix and serializes preprocessing as a LeRobot processor pipeline. Use the
+  strict converter when a LeRobot SFT checkpoint is the starting policy:
+
+.. code:: bash
+
+   python -m rlinf.utils.ckpt_convertor.gr00t_n1d7.convert lerobot_to_rlinf \
+      --input-model /checkpoints/lerobot/pretrained_model \
+      --native-reference /checkpoints/nvidia/GR00T-N1.7-3B \
+      --output-model /checkpoints/rlinf
+
+  The native reference supplies only the official N1.7 config/processor schema;
+  policy tensors come from the LeRobot checkpoint. The converter removes the
+  wrapper prefix, restores the tied embedding alias, and translates the trained
+  modality/statistics contract.
+- For real-robot deployment, export a consolidated RLinf checkpoint against the
+  exact LeRobot SFT checkpoint from which RL training started:
+
+.. code:: bash
+
+   python -m rlinf.utils.ckpt_convertor.gr00t_n1d7.convert rlinf_to_lerobot \
+      --input-model /runs/step_000100 \
+      --lerobot-reference /checkpoints/lerobot/pretrained_model \
+      --output-model /checkpoints/lerobot-step-000100
+
+  Export is fail-closed: missing or shape-changed deployment tensors and unknown
+  extras are rejected. Known RL-only value and exploration heads are omitted.
 
 **6. RL Training Contract in This Repository**
 

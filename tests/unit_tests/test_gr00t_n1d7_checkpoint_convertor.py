@@ -127,6 +127,12 @@ def test_processor_conversion_preserves_sft_contract(tmp_path):
         "ego",
         "external_D455",
     ]
+    # LeRobot omits delta_indices for current-timestep state/video inputs;
+    # native GR00T requires the field for every modality.
+    modalities = kwargs["modality_configs"]["new_embodiment"]
+    assert modalities["state"]["delta_indices"] == [0]
+    assert modalities["video"]["delta_indices"] == [0]
+    assert modalities["action"]["delta_indices"] == list(range(40))
     assert kwargs["max_action_horizon"] == 40
     assert kwargs["use_relative_action"] is True
     assert statistics == {"new_embodiment": pack["raw_stats"]}

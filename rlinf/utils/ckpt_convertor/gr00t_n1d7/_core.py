@@ -20,6 +20,7 @@ import hashlib
 import json
 import pathlib
 import shutil
+from copy import deepcopy
 from collections.abc import Mapping
 from typing import Any
 
@@ -268,7 +269,26 @@ def build_native_processor_files(
     kwargs = processor_config["processor_kwargs"]
 
     embodiment_tag = pack["embodiment_tag"]
-    kwargs["modality_configs"] = {embodiment_tag: pack["modality_config"]}
+    action_horizon = int(pack["action_horizon"])
+    if action_horizon <= 0:
+        raise ValueError(f"action_horizon must be positive, got {action_horizon}")
+
+    # LeRobot's PackInputs configuration treats delta_indices as optional for
+    # modalities sampled at the current timestep. Native GR00T N1.7's
+    # ModalityConfig requires it, however. Normalize only omitted values so a
+    # checkpoint retains its explicit temporal contract (notably video
+    # history) while remaining loadable by the native RLinf adapter.
+    modality_config = deepcopy(pack["modality_config"])
+    default_delta_indices = {
+        "state": [0],
+        "action": list(range(action_horizon)),
+        "video": [0],
+    }
+    for modality, config in modality_config.items():
+        if "delta_indices" not in config:
+            config["delta_indices"] = default_delta_indices.get(modality, [0])
+
+    kwargs["modality_configs"] = {embodiment_tag: modality_config}
     for key in (
         "max_state_dim",
         "max_action_dim",
@@ -278,7 +298,7 @@ def build_native_processor_files(
     ):
         kwargs[key] = pack[key]
     kwargs["use_mean_std"] = not pack["use_percentiles"]
-    kwargs["max_action_horizon"] = pack["action_horizon"]
+    kwargs["max_action_horizon"] = action_horizon
     kwargs["use_relative_action"] = bool(policy_config["use_relative_actions"])
     for key in (
         "image_crop_size",

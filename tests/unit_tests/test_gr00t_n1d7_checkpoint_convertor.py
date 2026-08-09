@@ -115,7 +115,23 @@ def test_processor_conversion_preserves_sft_contract(tmp_path):
         )
     )
     (native / "processor_config.json").write_text(
-        json.dumps({"processor_class": "Gr00tN1d7Processor", "processor_kwargs": {}})
+        json.dumps(
+            {
+                "processor_class": "Gr00tN1d7Processor",
+                "processor_kwargs": {
+                    "modality_configs": {
+                        "reference_embodiment": {
+                            "language": {
+                                "delta_indices": [0],
+                                "modality_keys": [
+                                    "annotation.human.task_description"
+                                ],
+                            }
+                        }
+                    }
+                },
+            }
+        )
     )
 
     processor, statistics, embodiment_ids = build_native_processor_files(
@@ -133,6 +149,10 @@ def test_processor_conversion_preserves_sft_contract(tmp_path):
     assert modalities["state"]["delta_indices"] == [0]
     assert modalities["video"]["delta_indices"] == [0]
     assert modalities["action"]["delta_indices"] == list(range(40))
+    assert modalities["language"] == {
+        "delta_indices": [0],
+        "modality_keys": ["annotation.human.task_description"],
+    }
     assert kwargs["max_action_horizon"] == 40
     assert kwargs["use_relative_action"] is True
     assert statistics == {"new_embodiment": pack["raw_stats"]}

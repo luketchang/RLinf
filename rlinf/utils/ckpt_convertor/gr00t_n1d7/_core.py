@@ -288,6 +288,25 @@ def build_native_processor_files(
         if "delta_indices" not in config:
             config["delta_indices"] = default_delta_indices.get(modality, [0])
 
+    # Native GR00T always consumes a language modality. LeRobot's SO-101
+    # PackInputs config may omit it because task text is injected by its own
+    # deployment pipeline. Retain an explicit LeRobot language contract when
+    # present; otherwise copy the canonical native one from the pinned base
+    # model. The SO-101 adapter emits that native key unchanged.
+    if "language" not in modality_config:
+        reference_modalities = kwargs.get("modality_configs", {})
+        reference_languages = [
+            modalities["language"]
+            for modalities in reference_modalities.values()
+            if "language" in modalities
+        ]
+        if not reference_languages:
+            raise ValueError(
+                "Native GR00T processor reference has no language modality; "
+                "cannot convert a LeRobot checkpoint that omits one"
+            )
+        modality_config["language"] = deepcopy(reference_languages[0])
+
     kwargs["modality_configs"] = {embodiment_tag: modality_config}
     for key in (
         "max_state_dim",

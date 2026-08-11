@@ -1798,7 +1798,12 @@ install_gr00t_n1d7_model() {
     install_common_embodied_deps
 
     local gr00t_path
-    gr00t_path=$(clone_or_reuse_repo GR00T_PATH "$VENV_DIR/gr00t" "https://github.com/NVIDIA/Isaac-GR00T.git" -b n1.7-release)
+    # N1.7 weights are downloaded explicitly from Hugging Face by the model
+    # loader.  The Git checkout is source-only, so do not hydrate its LFS
+    # objects during environment installation.  This avoids baking duplicate
+    # model blobs into every runtime image and mirrors the normal deployment
+    # flow for a source package plus separately versioned checkpoints.
+    gr00t_path=$(GIT_LFS_SKIP_SMUDGE=1 clone_or_reuse_repo GR00T_PATH "$VENV_DIR/gr00t" "https://github.com/NVIDIA/Isaac-GR00T.git" -b n1.7-release)
     uv pip install -e "$gr00t_path" --no-deps
     uv pip install -r "$SCRIPT_DIR/embodied/models/gr00t_n1d7.txt"
 

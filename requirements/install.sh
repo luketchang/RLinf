@@ -987,13 +987,21 @@ install_uv() {
     # Ensure uv is installed
     if ! command -v uv &> /dev/null; then
         echo "uv command not found. Installing uv..."
-        # Check if pip is available
-        if ! command -v pip &> /dev/null; then
-            echo "pip command not found. Please install pip first." >&2
+        # Distribution images conventionally expose either ``pip`` or
+        # ``pip3``.  Accept both rather than requiring an alias; this keeps
+        # the installer usable on the official Isaac Lab container and other
+        # minimal Debian/Ubuntu bases.
+        local pip_command=""
+        if command -v pip &> /dev/null; then
+            pip_command="pip"
+        elif command -v pip3 &> /dev/null; then
+            pip_command="pip3"
+        else
+            echo "Neither pip nor pip3 is available. Please install pip first." >&2
             exit 1
         fi
         pip_failed=0
-        pip install uv || pip_failed=1
+        "$pip_command" install uv || pip_failed=1
         if [ $pip_failed -eq 1 ]; then
             echo "Cannot install uv via pip. Installing uv using installer script..."
             if ! command -v wget &> /dev/null; then

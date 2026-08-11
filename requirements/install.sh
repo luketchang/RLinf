@@ -2275,7 +2275,12 @@ install_isaaclab_env() {
     uv pip uninstall -y cmake || true
     uv pip install "cmake<4"
 
-    $isaaclab_dir/isaaclab.sh --install
+    # RLinf supplies the learning stack.  Isaac Lab's default installation also
+    # installs every optional framework (rl_games, rsl_rl, sb3, skrl, and
+    # robomimic), which is unnecessary here and can independently resolve and
+    # overwrite shared dependencies.  Isaac Lab documents `none` for projects
+    # which only need its environment/task extensions.
+    $isaaclab_dir/isaaclab.sh --install none
     popd >/dev/null
 }
 

@@ -7,7 +7,11 @@ albumentations==1.4.18
 pyzmq==27.0.1
 pyopengl==3.1.10
 mujoco==3.6.0
-transformers==4.57.3
+# Keep the N1.7 runtime on the transformer patch release required by Isaac
+# Lab 2.3.2.  The N1.7 model API used by RLinf is compatible across this
+# patch-level update, while pinning 4.57.3 leaves Isaac Lab's declared runtime
+# contract unsatisfied.
+transformers==4.57.6
 lerobot==0.4.4
 peft==0.17.1
 lmdb==1.7.5

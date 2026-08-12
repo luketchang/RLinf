@@ -152,6 +152,42 @@ class _GroupedResetEnv:
         return obs, info
 
 
+class _SO101TaskStateEnv:
+    """Expose the native task's reward/diagnostic state through RLInf's hook."""
+
+    def __init__(self, env):
+        self._env = env
+
+    def __getattr__(self, name):
+        return getattr(self._env, name)
+
+    def get_rlinf_task_state(self):
+        contact_sensor = self._env.scene["contact_grasp"]
+        contact_norm = torch.linalg.vector_norm(
+            contact_sensor.data.force_matrix_w, dim=-1
+        ).sum(dim=1)
+        rack = self._env.scene["rack_left"]
+        return {
+            "contact_norm": contact_norm,
+            "rack_pos_w": rack.data.root_pos_w,
+            "rack_quat_w": rack.data.root_quat_w,
+            "vial_pos_w": torch.stack(
+                [
+                    self._env.scene[name].data.root_pos_w
+                    for name in ("vial_1", "vial_2", "vial_3")
+                ],
+                dim=1,
+            ),
+            "vial_quat_w": torch.stack(
+                [
+                    self._env.scene[name].data.root_quat_w
+                    for name in ("vial_1", "vial_2", "vial_3")
+                ],
+                dim=1,
+            ),
+        }
+
+
 class IsaaclabSO101VialsEnv(IsaaclabBaseEnv):
     """Expose the workshop task in RLInf's two-camera policy schema."""
 
@@ -238,34 +274,7 @@ class IsaaclabSO101VialsEnv(IsaaclabBaseEnv):
                         setattr(env_cfg.events, event_name, None)
             env = gym.make(self.isaaclab_env_id, cfg=env_cfg, render_mode="rgb_array").unwrapped
 
-            def get_rlinf_task_state():
-                """Return reward-only simulator state through RLinf's IPC boundary.
-
-                ``IsaaclabBaseEnv`` lives in the parent process, while the
-                native Isaac scene lives in ``SubProcIsaacLabEnv``.  Keep this
-                callback on the native environment; ``venv.py`` attaches its
-                result to each step's info dict through RLInf's optional hook.
-                """
-                contact_sensor = env.scene["contact_grasp"]
-                contact_norm = torch.linalg.vector_norm(
-                    contact_sensor.data.force_matrix_w, dim=-1
-                ).sum(dim=1)
-                rack = env.scene["rack_left"]
-                return {
-                    "contact_norm": contact_norm,
-                    "rack_pos_w": rack.data.root_pos_w,
-                    "rack_quat_w": rack.data.root_quat_w,
-                    "vial_pos_w": torch.stack(
-                        [env.scene[name].data.root_pos_w for name in ("vial_1", "vial_2", "vial_3")],
-                        dim=1,
-                    ),
-                    "vial_quat_w": torch.stack(
-                        [env.scene[name].data.root_quat_w for name in ("vial_1", "vial_2", "vial_3")],
-                        dim=1,
-                    ),
-                }
-
-            env.get_rlinf_task_state = get_rlinf_task_state
+            env = _SO101TaskStateEnv(env)
             if group_size > 1:
                 if self.cfg.init_params.num_envs % group_size:
                     raise ValueError(

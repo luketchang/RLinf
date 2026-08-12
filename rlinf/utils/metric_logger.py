@@ -31,6 +31,23 @@ class _TensorboardLogger:
         self.writer.close()
 
 
+class _WandbLogger:
+    """Bind logging to the explicit W&B run returned by ``wandb.init``."""
+
+    def __init__(self, wandb_module, run):
+        self._wandb = wandb_module
+        self._run = run
+
+    def log(self, data, step, commit=None):
+        self._run.log(data=data, step=step, commit=commit)
+
+    def table(self, dataframe):
+        return self._wandb.Table(dataframe=dataframe)
+
+    def finish(self):
+        self._run.finish()
+
+
 class MetricLogger:
     supported_logger = ["wandb", "swanlab", "tensorboard"]
 
@@ -84,16 +101,16 @@ class MetricLogger:
             settings = None
             if self.wandb_proxy:
                 settings = wandb.Settings(https_proxy=self.wandb_proxy)
-            wandb.init(
+            wandb_run = wandb.init(
                 entity=self.wandb_entity,
                 project=self.project_name,
                 name=experiment_name,
                 config=self.config,
                 settings=settings,
                 dir=wandb_log_path,
-                reinit=True,
+                reinit="finish_previous",
             )
-            logger["wandb"] = wandb
+            logger["wandb"] = _WandbLogger(wandb, wandb_run)
 
         if "swanlab" in self.logger_backends:
             import swanlab
@@ -150,6 +167,7 @@ class MetricLogger:
         backend=None,
         worker_group_name: str | None = None,
         rank: int | None = None,
+        commit: bool | None = None,
     ):
         target_logger = self.logger
         if self.per_worker_log and worker_group_name is not None and rank is not None:
@@ -159,11 +177,14 @@ class MetricLogger:
             )
         for default_backend, logger_instance in target_logger.items():
             if backend is None or default_backend in backend:
-                logger_instance.log(data=data, step=step)
+                if default_backend == "wandb":
+                    logger_instance.log(data=data, step=step, commit=commit)
+                else:
+                    logger_instance.log(data=data, step=step)
 
     def log_table(self, df_data, name, step):
         if "wandb" in self.logger_backends:
-            table = self.logger["wandb"].Table(dataframe=df_data)
+            table = self.logger["wandb"].table(dataframe=df_data)
             self.logger["wandb"].log({name: table}, step=step)
         else:
             raise ValueError(f"Unsupported log table for {self.logger_backends}")

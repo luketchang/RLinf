@@ -321,7 +321,8 @@ class EmbodiedRunner:
                 self.update_rollout_weights()
                 eval_metrics = self.evaluate()
                 eval_metrics = {f"eval/{k}": v for k, v in eval_metrics.items()}
-                self.metric_logger.log(data=eval_metrics, step=step)
+                # Commit evaluation with the rest of this update so W&B gets
+                # one complete history row for every embodied training step.
 
         if save_model:
             self._save_checkpoint()
@@ -390,10 +391,13 @@ class EmbodiedRunner:
             for k, v in self._aggregate_numeric_metrics(actor_training_metrics).items()
         }
 
-        self.metric_logger.log(env_metrics, step)
-        self.metric_logger.log(rollout_metrics, step)
-        self.metric_logger.log(time_metrics, step)
-        self.metric_logger.log(training_metrics, step)
+        step_metrics = {}
+        step_metrics.update(eval_metrics)
+        step_metrics.update(env_metrics)
+        step_metrics.update(rollout_metrics)
+        step_metrics.update(time_metrics)
+        step_metrics.update(training_metrics)
+        self.metric_logger.log(step_metrics, step, commit=True)
         self._log_ranked_metrics(
             metrics_list=actor_rollout_metrics,
             step=step,

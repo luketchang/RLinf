@@ -13,9 +13,12 @@
 # limitations under the License.
 
 from .tasks.stack_cube import IsaaclabStackCubeEnv
+from .tasks.so101_vials import IsaaclabSO101VialsEnv
 
 REGISTER_ISAACLAB_ENVS = {
     "Isaac-Stack-Cube-Franka-IK-Rel-Visuomotor-Rewarded-v0": IsaaclabStackCubeEnv,
+    "Lerobot-So101-Teleop-Vials-To-Rack-DR-Eval": IsaaclabSO101VialsEnv,
+    "Lerobot-So101-Teleop-Vials-To-Rack-Strict-Eval": IsaaclabSO101VialsEnv,
 }
 
 __all__ = [list(REGISTER_ISAACLAB_ENVS.keys())]

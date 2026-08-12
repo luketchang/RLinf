@@ -1,0 +1,69 @@
+env_type: isaaclab
+total_num_envs: null
+auto_reset: false
+ignore_terminations: false
+use_rel_reward: false
+seed: 0
+group_size: 1
+reward_coef: 1.0
+use_fixed_reset_state_ids: false
+# Evaluation profiles can replay the same scene reset on every checkpoint.
+# Keep this false for training so each update still receives new scenes.
+fixed_reset_seed: false
+
+# Disabled in the reusable base so BC evaluation and older sparse-reward runs
+# retain their exact semantics.  The ``grpo_milestone`` training profile turns
+# this on only for env.train; env.eval always reports the native strict task.
+reward_shaping:
+  enabled: false
+  # Disabled by default to preserve legacy profiles. The one-day PPO profile
+  # enables only this first-contact milestone plus native task success.
+  grasp_reward: 0.0
+  slot_alignment_reward: 0.05
+  aligned_release_reward: 0.15
+  strict_success_reward: 1.0
+  early_success_bonus: 0.20
+  # LeRobot SO-101 semantic gripper command (0 closed, 100 open).  This is
+  # equivalent to roughly one radian in the workshop articulation mapping.
+  gripper_open_threshold: 60.0
+  # Match the workshop's held-vial observation threshold. The stricter native
+  # placement condition independently uses 2 N during its release debounce.
+  contact_force_threshold: 0.1
+  # Asset-derived rack-local slot geometry. Alignment is deliberately looser
+  # than final placement so it supplies progress signal before release.
+  hole_centers_xy:
+    - [0.0298317, 0.0298575]
+    - [0.0901737, 0.0298575]
+    - [0.0901737, 0.0900894]
+    - [0.0308227, 0.0900894]
+  hole_center_tolerance: 0.018
+  vial_bottom_offset: -0.017
+  alignment_bottom_z_min: 0.05
+  alignment_bottom_z_max: 0.20
+  alignment_upright_threshold: 0.7
+# The BC policy needs roughly 10 seconds for a real pick-and-place.  The
+# workshop's former 7.5 second Eval cap ended otherwise-valid trajectories
+# during insertion.  Keep the RLinf wrapper and native task aligned at 22.5 s.
+max_steps_per_rollout_epoch: 1344
+max_episode_steps: 1344
+
+video_cfg:
+  save_video: false
+  info_on_video: true
+  fps: 30
+  video_base_dir: ${runner.logger.log_path}/video/train
+
+init_params:
+  # Nominal strict-reward task.  It preserves the established scene and
+  # physics, but success means a picked-up vial is fully inserted, upright,
+  # released, and settled in a specific rack slot.
+  id: "Lerobot-So101-Teleop-Vials-To-Rack-Strict-Eval"
+  num_envs: null
+  max_episode_steps: ${..max_episode_steps}
+  task_description: "Pick up the vial and place it in the rack"
+  external_cam:
+    height: 480
+    width: 640
+  wrist_cam:
+    height: 480
+    width: 640

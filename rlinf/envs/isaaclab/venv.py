@@ -50,8 +50,19 @@ def _torch_worker(
                 obs_queue.put(reset_result)
             elif cmd == "step":
                 input_action = action_queue.get()
-                step_result = isaac_env.step(input_action)
-                obs_queue.put(step_result)
+                obs, reward, terminations, truncations, info = isaac_env.step(
+                    input_action
+                )
+                # Some task adapters need a small amount of simulator-owned
+                # state to compute diagnostics or rewards in the parent
+                # process. Keep the subprocess boundary explicit: native
+                # environments may expose an optional callable which returns
+                # only the tensors they choose to publish through Gym info.
+                get_task_state = getattr(isaac_env, "get_rlinf_task_state", None)
+                if get_task_state is not None:
+                    info = dict(info or {})
+                    info["_rlinf_task_state"] = get_task_state()
+                obs_queue.put((obs, reward, terminations, truncations, info))
             elif cmd == "close":
                 isaac_env.close()
                 child_remote.close()

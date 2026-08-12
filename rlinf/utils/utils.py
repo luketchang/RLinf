@@ -316,6 +316,39 @@ def masked_mean(values: torch.Tensor, mask: torch.Tensor, axis=None):
         return (values * mask).sum(axis=axis) / mask.sum(axis=axis)
 
 
+def align_mask_to_values(
+    values: torch.Tensor, mask: Optional[torch.Tensor]
+) -> Optional[torch.Tensor]:
+    """Align a leading sample mask with token- or action-level values.
+
+    Embodied rollouts can carry one validity bit per flattened sample while
+    policy log-probabilities retain an action-chunk dimension.  Reshape a
+    ``[batch]`` mask to ``[batch, 1]`` for ``[batch, horizon]`` values, retain
+    masks that already have matching trailing dimensions, and reject shapes
+    that would accidentally broadcast across samples.
+    """
+    if mask is None:
+        return None
+    if mask.ndim > values.ndim:
+        raise ValueError(
+            f"Mask rank {mask.ndim} exceeds value rank {values.ndim}: "
+            f"{tuple(mask.shape)} vs {tuple(values.shape)}"
+        )
+    aligned = mask.reshape(*mask.shape, *((1,) * (values.ndim - mask.ndim)))
+    try:
+        broadcast_shape = torch.broadcast_shapes(values.shape, aligned.shape)
+    except RuntimeError as error:
+        raise ValueError(
+            f"Mask {tuple(mask.shape)} cannot select values {tuple(values.shape)}"
+        ) from error
+    if broadcast_shape != values.shape:
+        raise ValueError(
+            f"Mask {tuple(mask.shape)} would expand values {tuple(values.shape)} "
+            f"to {tuple(broadcast_shape)}"
+        )
+    return aligned
+
+
 def masked_sum(values: torch.Tensor, mask: torch.Tensor, axis=None):
     """Compute sum of tensor with a masked values."""
     return (values * mask).sum(axis=axis)

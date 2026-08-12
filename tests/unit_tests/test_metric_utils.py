@@ -19,6 +19,22 @@ import pytest
 import torch
 
 from rlinf.utils.metric_utils import compute_evaluate_metrics
+from rlinf.utils.utils import align_mask_to_values
+
+
+def test_align_mask_to_action_logprobs():
+    values = torch.zeros(4, 16)
+    mask = torch.tensor([True, False, True, False])
+
+    aligned = align_mask_to_values(values, mask)
+
+    assert aligned.shape == (4, 1)
+    assert torch.broadcast_shapes(values.shape, aligned.shape) == values.shape
+
+
+def test_align_mask_rejects_cross_sample_broadcast():
+    with pytest.raises(ValueError, match="cannot select|would expand"):
+        align_mask_to_values(torch.zeros(4, 16), torch.ones(4, 4, dtype=torch.bool))
 
 
 def test_compute_evaluate_metrics_reports_interact_delay_wait_time_stats():

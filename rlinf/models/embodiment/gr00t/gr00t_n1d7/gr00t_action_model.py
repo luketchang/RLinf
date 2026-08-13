@@ -988,28 +988,37 @@ class GR00T_N1_7_ForRLActionPrediction(Gr00tN1d7, BasePolicy):
             : self.action_head.action_chunk,
             : self.valid_action_dim,
         ]
+        # The actor-training path supplies rollout-time log-probabilities to
+        # construct PPO ratios.  Frozen-reference KL evaluation only needs the
+        # freshly recomputed log-probabilities, so it deliberately omits that
+        # rollout-only tensor.
+        prev_logprobs = kwargs.get("prev_logprobs")
         if self.action_head.rl_config.get("joint_logprob"):
             log_probs = log_probs.mean(dim=1)
-            prev_logprobs = kwargs["prev_logprobs"].mean(dim=1)
+            if prev_logprobs is not None:
+                prev_logprobs = prev_logprobs.mean(dim=1)
         else:
             bsize = log_probs.shape[0]
             log_probs = log_probs[:, 0]
-            prev_logprobs = kwargs["prev_logprobs"]
-            prev_logprobs = prev_logprobs[
-                torch.arange(bsize, device=prev_logprobs.device),
-                denoise_inds[:, 0].to(device=prev_logprobs.device),
-                : self.action_head.action_chunk,
-                : self.valid_action_dim,
-            ]
+            if prev_logprobs is not None:
+                prev_logprobs = prev_logprobs[
+                    torch.arange(bsize, device=prev_logprobs.device),
+                    denoise_inds[:, 0].to(device=prev_logprobs.device),
+                    : self.action_head.action_chunk,
+                    : self.valid_action_dim,
+                ]
         value_t = value_t.mean(dim=-1, keepdim=False)
 
         env_action_dim = self.action_dim
         log_probs = log_probs[..., :env_action_dim]
-        prev_logprobs = prev_logprobs[..., :env_action_dim]
+        if prev_logprobs is not None:
+            prev_logprobs = prev_logprobs[..., :env_action_dim]
 
         return {
             "logprobs": log_probs.float(),
-            "prev_logprobs": prev_logprobs.float(),
+            "prev_logprobs": (
+                prev_logprobs.float() if prev_logprobs is not None else None
+            ),
             "values": value_t,
             "entropy": None,
         }

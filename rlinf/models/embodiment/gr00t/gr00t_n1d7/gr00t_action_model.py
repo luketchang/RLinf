@@ -655,7 +655,12 @@ class FlowMatchingActionHeadForRLActionPrediction(Gr00tN1d7ActionHead):
         log_probs = torch.stack(log_probs, dim=1)[
             :, :, : self.action_chunk, : self.env_action_dim
         ]
-        if compute_values:
+        # GRPO is actor-only and intentionally configures no critic.  Keep its
+        # rollout schema compatible with actor-critic algorithms by emitting a
+        # zero placeholder, rather than trying to call a non-existent value
+        # head.  The actor worker ignores these values unless ``adv_type`` is
+        # GAE.
+        if compute_values and hasattr(self, "value_head"):
             values = self.get_value(vl_embs, state_features)
             values = values[:, None]
         else:
@@ -730,7 +735,9 @@ class FlowMatchingActionHeadForRLActionPrediction(Gr00tN1d7ActionHead):
             chains_log_probs.append(log_probs)
 
         chains_log_probs = torch.stack(chains_log_probs, dim=1)
-        if compute_values:
+        # See ``get_rl_action``: critic-free GRPO models do not construct a
+        # value head, but still share this forward interface with PPO.
+        if compute_values and hasattr(self, "value_head"):
             chains_values = self.get_value(vl_embs, state_features)
             chains_values = chains_values[:, None]
         else:

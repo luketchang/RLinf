@@ -150,6 +150,10 @@ actor:
     sharding_strategy: full_shard
     gradient_checkpointing: true
     use_orig_params: true
+    # Keep live training checkpoints as resumable DCP shards.  Gathering a
+    # full 3B state dict duplicates the actor while reference, rollout, and
+    # Isaac workers are resident; export portable weights offline instead.
+    save_full_model_weights: false
     mixed_precision:
       param_dtype: ${actor.model.precision}
       reduce_dtype: ${actor.model.precision}

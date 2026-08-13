@@ -5,6 +5,15 @@ precision: "bf16"
 trust_remote_code: True
 is_lora: false
 
+# Standard GR00T fine-tuning scope.  Individual task configs may override
+# these explicitly, but never inherit trainability from a source checkpoint.
+tune_llm: false
+tune_visual: false
+tune_projector: true
+tune_diffusion_model: true
+tune_vlln: true
+tune_top_llm_layers: 0
+
 # Action and policy settings
 action_dim: 7
 # Match the validated Isaac-GR00T LIBERO rollout, which executes the first 8

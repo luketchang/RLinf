@@ -74,6 +74,23 @@ def get_model(cfg: DictConfig, torch_dtype=torch.bfloat16):
         raise FileNotFoundError(f"Model path does not exist: {model_path}")
 
     config = Gr00tN1d7Config.from_pretrained(str(model_path))
+    # A LeRobot SFT export records the *checkpoint's* fine-tuning flags.  Those
+    # flags describe how that checkpoint was produced, not necessarily the RL
+    # recipe.  In particular, an all-trainable export would otherwise silently
+    # unfreeze the Qwen language and vision backbones for RL.  Make the RL
+    # trainable scope explicit in the RLInf config, mirroring GR00T's standard
+    # fine-tuning recipe by default.
+    finetune_defaults = {
+        "tune_llm": False,
+        "tune_visual": False,
+        "tune_projector": True,
+        "tune_diffusion_model": True,
+        "tune_vlln": True,
+        "tune_top_llm_layers": 0,
+    }
+    for name, default in finetune_defaults.items():
+        if hasattr(config, name):
+            setattr(config, name, OmegaConf.select(cfg, name, default=default))
     _action_dim = cfg.get("action_dim")
     if _action_dim is not None:
         config.action_dim = _action_dim
@@ -99,5 +116,19 @@ def get_model(cfg: DictConfig, torch_dtype=torch.bfloat16):
 
     if cfg.rl_head_config.disable_dropout:
         replace_dropout_with_identity(model)
+
+    trainable_params = sum(param.numel() for param in model.parameters() if param.requires_grad)
+    total_params = sum(param.numel() for param in model.parameters())
+    logger.info(
+        "GR00T N1.7 RL trainable scope: %.1fM / %.1fM parameters "
+        "(llm=%s, visual=%s, projector=%s, diffusion=%s, vlln=%s)",
+        trainable_params / 1e6,
+        total_params / 1e6,
+        config.tune_llm,
+        config.tune_visual,
+        config.tune_projector,
+        config.tune_diffusion_model,
+        config.tune_vlln,
+    )
 
     return model

@@ -5,6 +5,17 @@ precision: "bf16"
 trust_remote_code: True
 is_lora: false
 
+# Match GR00T's standard SFT recipe: keep the Qwen language/vision backbone
+# frozen, while fine-tuning VLM normalization and the action head.  These
+# settings deliberately override any all-trainable flags serialized in a
+# LeRobot checkpoint's config.json.
+tune_llm: false
+tune_visual: false
+tune_projector: true
+tune_diffusion_model: true
+tune_vlln: true
+tune_top_llm_layers: 0
+
 # NVIDIA's SO-100/SO-101 N1.7 data config uses five arm joints, one gripper
 # joint, and a 16-action prediction horizon.
 action_dim: 6

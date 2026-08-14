@@ -13,11 +13,44 @@
 # limitations under the License.
 
 from pathlib import Path
+from collections import defaultdict
 
 import torch
 from omegaconf import DictConfig, OmegaConf
 
 from rlinf.utils.logging import get_logger
+
+
+def verify_action_expert_trainable_scope(model) -> dict[str, int]:
+    """Assert that SO-101 RL only updates GR00T's action expert.
+
+    GR00T N1.7's action expert is deliberately larger than π0.5's: it
+    contains the DiT diffusion model, input/output projections, action-side
+    normalization, and optional action-side attention.  It is still distinct
+    from the Qwen vision/language backbone.  Keep this assertion close to
+    model construction so a checkpoint's serialized SFT flags cannot silently
+    unfreeze the backbone during RL.
+    """
+    unexpected = [
+        name
+        for name, parameter in model.named_parameters()
+        if parameter.requires_grad and not name.startswith("action_head.")
+    ]
+    if unexpected:
+        preview = ", ".join(unexpected[:8])
+        raise RuntimeError(
+            "GR00T RL must freeze every non-action-head parameter; "
+            f"found trainable parameters outside action_head: {preview}"
+        )
+
+    trainable_by_module: dict[str, int] = defaultdict(int)
+    for name, parameter in model.named_parameters():
+        if parameter.requires_grad:
+            module = ".".join(name.split(".")[:2])
+            trainable_by_module[module] += parameter.numel()
+    if not trainable_by_module:
+        raise RuntimeError("GR00T RL has no trainable action-expert parameters.")
+    return dict(trainable_by_module)
 
 
 def get_model(cfg: DictConfig, torch_dtype=torch.bfloat16):
@@ -117,7 +150,8 @@ def get_model(cfg: DictConfig, torch_dtype=torch.bfloat16):
     if cfg.rl_head_config.disable_dropout:
         replace_dropout_with_identity(model)
 
-    trainable_params = sum(param.numel() for param in model.parameters() if param.requires_grad)
+    trainable_by_module = verify_action_expert_trainable_scope(model)
+    trainable_params = sum(trainable_by_module.values())
     total_params = sum(param.numel() for param in model.parameters())
     logger.info(
         "GR00T N1.7 RL trainable scope: %.1fM / %.1fM parameters "
@@ -129,6 +163,13 @@ def get_model(cfg: DictConfig, torch_dtype=torch.bfloat16):
         config.tune_projector,
         config.tune_diffusion_model,
         config.tune_vlln,
+    )
+    logger.info(
+        "GR00T N1.7 action-expert breakdown: %s",
+        ", ".join(
+            f"{name}={count / 1e6:.1f}M"
+            for name, count in sorted(trainable_by_module.items())
+        ),
     )
 
     return model

@@ -77,7 +77,16 @@ env:
     fixed_reset_seed: false
     seed: 42
     reward_shaping:
-      enabled: false
+      # Two bounded one-shot milestones.  A verified first grasp receives
+      # enough credit to improve GR00T's weak pickup behavior, while native
+      # confirmed placement remains the dominant objective.  No proximity or
+      # release shaping is used, so a failed trajectory can earn at most 0.2.
+      enabled: true
+      grasp_reward: 0.2
+      slot_alignment_reward: 0.0
+      aligned_release_reward: 0.0
+      strict_success_reward: 1.0
+      early_success_bonus: 0.0
   eval:
     rollout_epoch: 1
     total_num_envs: 8

@@ -73,6 +73,7 @@ class RecordVideo(gym.Wrapper):
             raise AttributeError("Environment must have 'seed' attribute")
 
         self.video_cfg = video_cfg
+        self._video_base_dir = self._config_value("video_base_dir")
         self.render_images: list[np.ndarray] = []
         self.video_cnt = 0
         self._num_envs = getattr(env, "num_envs", 1)
@@ -105,6 +106,12 @@ class RecordVideo(gym.Wrapper):
     @is_start.setter
     def is_start(self, value):
         setattr(self.env, "is_start", value)
+
+    def _config_value(self, name: str, default=None):
+        """Read a video option from either a mapping or an attribute config."""
+        if isinstance(self.video_cfg, dict):
+            return self.video_cfg.get(name, default)
+        return getattr(self.video_cfg, name, default)
 
     def _get_fps_from_env(self, env: gym.Env) -> int:
         """Resolve FPS from config/env metadata with fallback."""
@@ -472,7 +479,7 @@ class RecordVideo(gym.Wrapper):
             return
 
         output_dir = os.path.join(
-            self.video_cfg.video_base_dir, f"seed_{self.env.seed}"
+            self._video_base_dir, f"seed_{self.env.seed}"
         )
         if video_sub_dir is not None:
             output_dir = os.path.join(output_dir, f"{video_sub_dir}")

@@ -88,7 +88,9 @@ env:
       strict_success_reward: 1.0
       early_success_bonus: 0.0
   eval:
-    rollout_epoch: 1
+    # 32 fixed scenes as four 8-env batches.  This avoids building one giant
+    # tiled video while preserving a stable checkpoint comparison suite.
+    rollout_epoch: 4
     total_num_envs: 8
     group_size: 1
     max_episode_steps: 1344
@@ -97,12 +99,23 @@ env:
     ignore_terminations: true
     fixed_reset_seed: true
     seed: 31000
+    fixed_reset_seed_schedule: [31000, 31008, 31016, 31024]
     reward_shaping:
       enabled: false
     video_cfg:
       save_video: true
       info_on_video: true
       video_base_dir: ${runner.logger.log_path}/video/eval
+      # 60 Hz simulation sampled every sixth frame and encoded at 5 FPS keeps
+      # videos real-time while reducing raw encoder input by 6x. Encoding is
+      # bounded and overlaps the following evaluation batch.
+      fps: 5
+      frame_stride: 6
+      async_encode: true
+      encoder_workers: 1
+      max_pending_videos: 2
+      encoder_preset: ultrafast
+      encoder_crf: 28
 
 rollout:
   group_name: RolloutGroup

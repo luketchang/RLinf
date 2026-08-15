@@ -760,7 +760,17 @@ class EnvWorker(Worker):
                 if self.cfg.env.eval.video_cfg.save_video:
                     flush_video = get_env_attr(self.eval_env_list[i], "flush_video")
                     if callable(flush_video):
-                        flush_video()
+                        # Video encoding is optionally overlapped with the next
+                        # evaluation rollout. The wrapper keeps its queue
+                        # bounded; ``evaluate`` joins it before returning so
+                        # checkpoint uploaders only ever see finalized MP4s.
+                        flush_video(
+                            wait=not bool(
+                                self.cfg.env.eval.video_cfg.get(
+                                    "async_encode", False
+                                )
+                            )
+                        )
                 if not self.cfg.env.eval.auto_reset:
                     self.eval_env_list[i].update_reset_state_ids()
 
@@ -1313,6 +1323,15 @@ class EnvWorker(Worker):
     @Worker.timer("evaluate")
     def evaluate(self, input_channel: Channel, rollout_channel: Channel):
         eval_metrics = defaultdict(list)
+        # Environments with a fixed evaluation suite can reset their seed
+        # iterator here. This is intentionally duck-typed so generic RLInf
+        # environments retain their existing behavior.
+        for stage_id in range(self.stage_num):
+            reset_fixed_seed_schedule = get_env_attr(
+                self.eval_env_list[stage_id], "reset_fixed_seed_schedule"
+            )
+            if callable(reset_fixed_seed_schedule):
+                reset_fixed_seed_schedule()
         for eval_rollout_epoch in range(self.eval_rollout_epoch):
             if not self.cfg.env.eval.auto_reset or eval_rollout_epoch == 0:
                 for stage_id in range(self.stage_num):
@@ -1391,6 +1410,16 @@ class EnvWorker(Worker):
                     )
 
             self.finish_rollout(mode="eval")
+        # All asynchronous encodes must finish before reporting the evaluation
+        # complete. This preserves valid MP4 files while allowing prior video
+        # batches to encode during later rollout batches.
+        if self.cfg.env.eval.video_cfg.save_video:
+            for stage_id in range(self.stage_num):
+                wait_for_videos = get_env_attr(
+                    self.eval_env_list[stage_id], "wait_for_videos"
+                )
+                if callable(wait_for_videos):
+                    wait_for_videos()
         for stage_id in range(self.stage_num):
             if self.eval_enable_offload:
                 get_env_attr(self.eval_env_list[stage_id], "offload")()

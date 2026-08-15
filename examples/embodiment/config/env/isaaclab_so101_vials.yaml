@@ -10,6 +10,10 @@ use_fixed_reset_state_ids: false
 # Evaluation profiles can replay the same scene reset on every checkpoint.
 # Keep this false for training so each update still receives new scenes.
 fixed_reset_seed: false
+# When populated, one entry is consumed for each evaluation rollout epoch.
+# This makes a large deterministic evaluation suite practical without one
+# oversized Isaac scene batch.
+fixed_reset_seed_schedule: []
 
 # Disabled in the reusable base so BC evaluation and older sparse-reward runs
 # retain their exact semantics.  The ``grpo_milestone`` training profile turns
@@ -51,6 +55,14 @@ video_cfg:
   save_video: false
   info_on_video: true
   fps: 30
+  # RecordVideo preserves this synchronous, full-frame behavior by default.
+  # Evaluation profiles can opt into bounded async encoding and sampling.
+  frame_stride: 1
+  async_encode: false
+  encoder_workers: 1
+  max_pending_videos: 1
+  encoder_preset: null
+  encoder_crf: null
   video_base_dir: ${runner.logger.log_path}/video/train
 
 init_params:

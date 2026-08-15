@@ -193,6 +193,16 @@ class IsaaclabSO101VialsEnv(IsaaclabBaseEnv):
 
     def __init__(self, cfg, num_envs, seed_offset, total_num_processes, worker_info):
         super().__init__(cfg, num_envs, seed_offset, total_num_processes, worker_info)
+        self._fixed_reset_schedule_index = 0
+
+    def reset_fixed_seed_schedule(self):
+        """Restart the configured fixed evaluation-suite seed schedule.
+
+        RLInf calls ``reset`` once per evaluation rollout epoch.  Advancing the
+        seed here lets a fixed 32-scene suite execute as four manageable
+        8-environment batches without changing the scenes at each checkpoint.
+        """
+        self._fixed_reset_schedule_index = 0
 
     def reset(self, seed=None, env_ids=None):
         """Reset, optionally replaying the exact configured evaluation scenes."""
@@ -201,7 +211,16 @@ class IsaaclabSO101VialsEnv(IsaaclabBaseEnv):
                 raise RuntimeError(
                     "fixed_reset_seed requires full-batch evaluation resets"
                 )
-            seed = int(self.cfg.seed)
+            schedule = self.cfg.get("fixed_reset_seed_schedule", [])
+            if schedule:
+                seed = int(
+                    schedule[
+                        self._fixed_reset_schedule_index % len(schedule)
+                    ]
+                )
+                self._fixed_reset_schedule_index += 1
+            else:
+                seed = int(self.cfg.seed)
         return super().reset(seed=seed, env_ids=env_ids)
 
     def _make_env_function(self):

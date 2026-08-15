@@ -70,7 +70,7 @@ env:
     rollout_epoch: 1
     total_num_envs: 1
   eval:
-    rollout_epoch: 1
+    rollout_epoch: 4
     total_num_envs: 8
     max_episode_steps: 1344
     max_steps_per_rollout_epoch: 1344
@@ -78,10 +78,18 @@ env:
     ignore_terminations: true
     fixed_reset_seed: true
     seed: 31000
+    fixed_reset_seed_schedule: [31000, 31008, 31016, 31024]
     video_cfg:
       save_video: true
       info_on_video: true
       video_base_dir: ${runner.logger.log_path}/video/eval
+      fps: 5
+      frame_stride: 6
+      async_encode: true
+      encoder_workers: 1
+      max_pending_videos: 2
+      encoder_preset: ultrafast
+      encoder_crf: 28
 
 rollout:
   group_name: RolloutGroup

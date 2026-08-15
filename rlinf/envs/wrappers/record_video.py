@@ -76,7 +76,21 @@ class RecordVideo(gym.Wrapper):
         self.render_images: list[np.ndarray] = []
         self.video_cnt = 0
         self._num_envs = getattr(env, "num_envs", 1)
-        self._executor = ThreadPoolExecutor(max_workers=1)
+        # Encoding can be substantially slower than simulation for tiled
+        # IsaacLab evaluations.  These options retain the historical,
+        # synchronous behaviour by default, while allowing a caller to bound
+        # asynchronous writes explicitly.
+        self._frame_stride = max(1, int(self.video_cfg.get("frame_stride", 1)))
+        self._frame_index = 0
+        self._async_encode = bool(self.video_cfg.get("async_encode", False))
+        self._max_pending_videos = max(
+            1, int(self.video_cfg.get("max_pending_videos", 1))
+        )
+        self._encoder_preset = self.video_cfg.get("encoder_preset", None)
+        self._encoder_crf = self.video_cfg.get("encoder_crf", None)
+        self._executor = ThreadPoolExecutor(
+            max_workers=max(1, int(self.video_cfg.get("encoder_workers", 1)))
+        )
         self._save_futures: list[Future] = []
 
         if fps is not None:
@@ -314,6 +328,14 @@ class RecordVideo(gym.Wrapper):
         """Overlay info (optional) and append a tiled frame."""
         if not images:
             return
+        # Keep the first frame of every video and then sample at a fixed stride.
+        # The caller should lower ``fps`` by the same factor to preserve
+        # wall-clock playback speed.  Sampling at collection time, rather than
+        # after tiling, prevents multi-gigabyte raw frame buffers from building.
+        if self._frame_index % self._frame_stride:
+            self._frame_index += 1
+            return
+        self._frame_index += 1
         if self.video_cfg.get("info_on_video", True):
             images = [
                 put_info_on_image(
@@ -435,16 +457,16 @@ class RecordVideo(gym.Wrapper):
         self.record_video_in_result(result)
         return result
 
-    def flush_video(self, video_sub_dir: Optional[str] = None):
+    def flush_video(
+        self, video_sub_dir: Optional[str] = None, *, wait: Optional[bool] = None
+    ):
         """Write buffered frames to an MP4 file.
 
-        The encode happens on the background thread pool, but we wait for the
-        just-submitted write to complete before returning. The wait is required
-        so the MP4 has a finalized ``moov`` atom on disk: ``imageio`` only writes
-        it during ``writer.close()``, and the pool's worker threads are daemon
-        threads that get killed mid-task at interpreter exit (no ``atexit``
-        handler is run under Ray actor shutdown either). Without this wait,
-        eval videos end at ``mdat`` and no player can open them.
+        By default this preserves the historical synchronous contract.  With
+        ``video_cfg.async_encode=true`` callers may request ``wait=False`` to
+        overlap encoding with the next rollout.  ``wait_for_videos`` must then
+        be called before a process exits or an uploader reads the files: MP4's
+        terminal index is written only when the encoder closes the file.
         """
         if not self.render_images:
             return
@@ -459,11 +481,16 @@ class RecordVideo(gym.Wrapper):
         mp4_path = os.path.join(output_dir, f"{self.video_cnt}.mp4")
         frames = list(self.render_images)
         self.render_images = []
+        self._frame_index = 0
         self.video_cnt += 1
+        self._wait_for_capacity()
         future = self._submit_save(frames, mp4_path)
-        # Block until the encode + writer.close() returns so the MP4 is valid
-        # on disk before the rollout loop continues (or the process exits).
-        future.result()
+        if wait is None:
+            wait = not self._async_encode
+        if wait:
+            # Block until the encode + writer.close() returns so the MP4 is
+            # valid on disk before the rollout loop continues.
+            future.result()
 
     def _submit_save(self, frames: list[np.ndarray], mp4_path: str) -> Future:
         """Submit a background job to save the video, return its Future."""
@@ -476,7 +503,16 @@ class RecordVideo(gym.Wrapper):
         """Save frames to disk (runs in background)."""
         video_writer = None
         try:
-            video_writer = imageio.get_writer(mp4_path, fps=self._fps)
+            ffmpeg_params = []
+            if self._encoder_preset:
+                ffmpeg_params.extend(["-preset", str(self._encoder_preset)])
+            if self._encoder_crf is not None:
+                ffmpeg_params.extend(["-crf", str(self._encoder_crf)])
+            video_writer = imageio.get_writer(
+                mp4_path,
+                fps=self._fps,
+                ffmpeg_params=ffmpeg_params or None,
+            )
             for img in frames:
                 video_writer.append_data(img)
         except Exception as exc:
@@ -489,10 +525,23 @@ class RecordVideo(gym.Wrapper):
         """Remove finished futures to avoid unbounded growth."""
         self._save_futures = [f for f in self._save_futures if not f.done()]
 
+    def _wait_for_capacity(self) -> None:
+        """Bound raw-frame memory retained by queued encodes."""
+        self._prune_futures()
+        while len(self._save_futures) >= self._max_pending_videos:
+            self._save_futures.pop(0).result()
+            self._prune_futures()
+
+    def wait_for_videos(self) -> None:
+        """Finalize every submitted MP4 and propagate encoder failures."""
+        for future in self._save_futures:
+            future.result()
+        self._save_futures = []
+
     def close(self):
         """Wait for pending video writes before closing."""
+        self.wait_for_videos()
         self._executor.shutdown(wait=True)
-        self._save_futures = []
         return super().close()
 
     def update_reset_state_ids(self):

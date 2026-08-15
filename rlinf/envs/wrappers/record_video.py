@@ -115,8 +115,9 @@ class RecordVideo(gym.Wrapper):
 
     def _get_fps_from_env(self, env: gym.Env) -> int:
         """Resolve FPS from config/env metadata with fallback."""
-        if hasattr(self.video_cfg, "fps") and self.video_cfg.fps is not None:
-            return int(self.video_cfg.fps)
+        configured_fps = self._config_value("fps")
+        if configured_fps is not None:
+            return int(configured_fps)
         if hasattr(env, "cfg") and hasattr(env.cfg, "init_params"):
             if hasattr(env.cfg.init_params, "sim_config"):
                 if hasattr(env.cfg.init_params.sim_config, "control_freq"):

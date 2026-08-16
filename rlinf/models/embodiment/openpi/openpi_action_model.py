@@ -43,7 +43,14 @@ from rlinf.utils.pytree import register_pytree_dataclasses
 
 
 def _to_numpy(x):
-    return np.asarray(x.detach().cpu()) if torch.is_tensor(x) else x
+    if not torch.is_tensor(x):
+        return x
+    # NumPy has no bfloat16 dtype. Keep model execution in BF16 and convert
+    # only at the CPU transform boundary used by OpenPI preprocessing.
+    tensor = x.detach().cpu()
+    if tensor.dtype == torch.bfloat16:
+        tensor = tensor.float()
+    return np.asarray(tensor)
 
 
 @dataclass(frozen=True)
@@ -351,7 +358,7 @@ class OpenPi0ForRLActionPrediction(PI0Pytorch, BasePolicy):
         batch_size = outputs["actions"].shape[0]
         transformed_samples = []
         for i in range(batch_size):
-            sample = tree_map(lambda x: np.asarray(x[i].detach().cpu()), outputs)
+            sample = tree_map(lambda x: _to_numpy(x[i]), outputs)
             sample = self._output_transform(sample)
             transformed_samples.append(sample)
         # recombine
@@ -818,6 +825,24 @@ class OpenPi0ForRLActionPrediction(PI0Pytorch, BasePolicy):
             processed_obs["observation/wrist_image"] = env_obs["wrist_images"]
         if env_obs["extra_view_images"] is not None:
             processed_obs["observation/extra_view_image"] = env_obs["extra_view_images"]
+        if self.config.config_name == "pi05_so101_vials":
+            # SO-101 uses a six-dimensional physical action interface while
+            # OpenPI keeps its internal action projection padded to 32. The
+            # training repacker expects an action field even during inference;
+            # this placeholder is schema-only and sample_actions produces the
+            # actual action chunk.
+            processed_obs["action"] = env_obs.get(
+                "action",
+                torch.zeros(
+                    (
+                        env_obs["states"].shape[0],
+                        self.config.action_horizon,
+                        self.config.action_env_dim,
+                    ),
+                    device=env_obs["states"].device,
+                    dtype=env_obs["states"].dtype,
+                ),
+            )
         return processed_obs
 
     def precision_processor(self, processed_obs):

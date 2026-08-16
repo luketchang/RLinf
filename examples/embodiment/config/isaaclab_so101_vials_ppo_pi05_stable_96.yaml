@@ -1,0 +1,171 @@
+# Stabilized 96-update SO-101 pi0.5 PPO experiment.
+#
+# The earlier 16-env run inherited actor.global_batch_size=4. RLinf flattens
+# the 16 environments and 84 action chunks per trajectory into 1,344 training
+# samples, so that setting caused 336 optimizer steps per rollout update. This
+# recipe uses a 224-sample global batch (an exact divisor of 1,344), reducing
+# that to six optimizer steps while retaining all rollout data.
+defaults:
+  - env/isaaclab_so101_vials@env.train
+  - env/isaaclab_so101_vials@env.eval
+  - model/pi0_5@actor.model
+  # RLInf renamed this config group from `training_backend` to
+  # `hybrid_engines`; keep the task recipe aligned with the pinned fork.
+  - hybrid_engines/fsdp@actor.fsdp_config
+  - weight_syncer/patch_syncer@weight_syncer
+  - _self_
+  - override hydra/job_logging: stdout
+
+hydra:
+  run: {dir: .}
+  output_subdir: null
+  searchpath: ["file://${oc.env:EMBODIED_PATH}/config/"]
+
+cluster:
+  num_nodes: 1
+  component_placement:
+    actor,env,rollout: all
+
+runner:
+  task_type: embodied
+  logger:
+    log_path: ../results
+    project_name: so101-pi05-rlft
+    experiment_name: so101_vials_ppo_pi05_stable_96
+    logger_backends: [tensorboard]
+  max_epochs: 96
+  max_steps: -1
+  only_eval: false
+  # Eight fixed-scene evaluation environments every four updates provide a
+  # less brittle signal than the previous single evaluation video.
+  val_check_interval: 4
+  save_interval: 8
+  resume_dir: null
+  ckpt_path: null
+
+algorithm:
+  normalize_advantages: true
+  kl_penalty: kl
+  group_size: 1
+  reward_coef: 1.0
+  reward_type: chunk_level
+  logprob_type: chunk_level
+  entropy_type: token_level
+  # Keep one pass over each rollout until policy stability is demonstrated.
+  update_epoch: 1
+  adv_type: gae
+  loss_type: actor_critic
+  loss_agg_func: token-mean
+  # The reference IsaacLab recipe does not add a KL reward penalty.
+  kl_beta: 0.0
+  entropy_bonus: 0.0
+  # Match the clipping width used by RLinf's IsaacLab pi0.5 PPO reference.
+  clip_ratio_high: 0.2
+  clip_ratio_low: 0.2
+  clip_ratio_c: 3.0
+  value_clip: 0.2
+  huber_delta: 10.0
+  gamma: 0.99
+  gae_lambda: 0.95
+  filter_rewards: false
+  rewards_lower_bound: 0.1
+  rewards_upper_bound: 0.9
+
+env:
+  group_name: EnvGroup
+  train:
+    rollout_epoch: 1
+    total_num_envs: 16
+    max_episode_steps: 1344
+    max_steps_per_rollout_epoch: 1344
+    seed: 42
+  eval:
+    rollout_epoch: 1
+    total_num_envs: 8
+    max_episode_steps: 1344
+    max_steps_per_rollout_epoch: 1344
+    auto_reset: false
+    # Fixed-horizon evaluation retains first success as success_once while
+    # preserving the final scene for videos.
+    ignore_terminations: true
+    seed: 1042
+    video_cfg:
+      save_video: true
+      info_on_video: true
+      video_base_dir: ${runner.logger.log_path}/video/eval
+
+rollout:
+  group_name: RolloutGroup
+  backend: huggingface
+  enable_offload: true
+  pipeline_stage_num: 1
+  model:
+    model_type: openpi
+    model_path: ${oc.env:SO101_PI05_RLINF_MODEL}
+    precision: ${actor.model.precision}
+    # The rollout evaluator builds trajectory metadata from this internal
+    # π0.5 action width. The SO-101 adapter maps its first six semantics to
+    # Isaac joint targets at the environment boundary.
+    action_dim: 32
+    # RLinf's HuggingFace rollout worker reads this field directly rather
+    # than through ``cfg.get``.  Keep it explicit for base π0.5 evaluation
+    # and ordinary full-model PPO (we are not using LoRA).
+    is_lora: false
+    num_action_chunks: ${actor.model.num_action_chunks}
+    openpi: ${actor.model.openpi}
+
+actor:
+  group_name: ActorGroup
+  training_backend: fsdp
+  # 16 envs * (1344 steps / 16-action chunks) = 1344 samples/update.
+  # 224 divides 1344 exactly, yielding six optimizer steps per update.
+  global_batch_size: 224
+  # The RTX PRO 6000's 96 GB budget should support four samples while
+  # substantially reducing microbatch overhead versus size one.
+  micro_batch_size: 4
+  seed: 42
+  enable_offload: true
+  model:
+    model_path: ${oc.env:SO101_PI05_RLINF_MODEL}
+    model_type: openpi
+    precision: bf16
+    action_dim: 32
+    num_action_chunks: 16
+    num_steps: 10
+    add_value_head: true
+    openpi:
+      config_name: pi05_so101_vials
+      num_images_in_input: 2
+      action_chunk: ${..num_action_chunks}
+      action_env_dim: 6
+      num_steps: ${..num_steps}
+      noise_method: flow_sde
+      # πRL's published Flow-SDE default is 0.5. Lower values sharpen the
+      # Gaussian transition density and can produce unstable gradients.
+      noise_level: 0.5
+      train_expert_only: true
+      add_value_head: ${..add_value_head}
+      value_after_vlm: true
+      value_vlm_mode: mean_token
+      detach_critic_input: true
+      joint_logprob: false
+      safe_get_logprob: false
+  optim:
+    lr: 5.0e-6
+    value_lr: 1.0e-4
+    adam_beta1: 0.9
+    adam_beta2: 0.95
+    adam_eps: 1.0e-8
+    clip_grad: 1.0
+    weight_decay: 0.01
+    critic_warmup_steps: 0
+  fsdp_config:
+    strategy: fsdp
+    sharding_strategy: no_shard
+    gradient_checkpointing: false
+    amp_autocast:
+      enabled: true
+      precision: bf16
+
+reward: {use_reward_model: false}
+critic: {use_critic_model: false}

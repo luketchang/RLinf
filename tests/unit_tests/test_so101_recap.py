@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+import torch
 
 openpi = pytest.importorskip("openpi")
 
 from openpi.models import model as model_lib  # noqa: E402
 
+from rlinf.models.embodiment.openpi.dataconfig import (  # noqa: E402
+    get_openpi_config,
+)
 from rlinf.models.embodiment.openpi.policies.so101_vials_policy import (  # noqa: E402
     SO101VialsInputs,
     SO101VialsOutputs,
@@ -85,3 +89,17 @@ def test_so101_openpi_inputs_use_two_real_cameras_and_six_actions():
     output = SO101VialsOutputs()({"actions": padded_actions})
     np.testing.assert_array_equal(output["actions"], padded_actions[:, :6])
 
+
+def test_so101_openpi_keeps_padded_internal_action_width():
+    config = get_openpi_config("pi05_so101_vials")
+
+    assert config.model.action_dim == 32
+    assert config.model.action_horizon == 50
+
+
+def test_openpi_numpy_boundary_accepts_bfloat16():
+    from rlinf.models.embodiment.openpi.openpi_action_model import _to_numpy
+
+    converted = _to_numpy(torch.ones(2, dtype=torch.bfloat16))
+
+    assert converted.dtype == np.float32

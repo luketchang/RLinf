@@ -1763,11 +1763,20 @@ class EmbodiedFSDPActor(FSDPModelManager, Worker):
         ]:
             prev_logprobs = output_dict["prev_logprobs"]
 
+        single_action_dim = self.cfg.actor.model.get("action_dim", 7)
+        if SupportedModel(self.cfg.actor.model.model_type) == SupportedModel.OPENPI:
+            # OpenPI can use a padded internal action projection while exposing
+            # a smaller physical action interface. Policy likelihoods and
+            # entropy are emitted over the latter dimension.
+            single_action_dim = self.cfg.actor.model.openpi.get(
+                "action_env_dim", single_action_dim
+            )
+
         loss_kwargs = {
             "loss_type": self.cfg.algorithm.loss_type,
             "logprob_type": self.cfg.algorithm.logprob_type,
             "reward_type": self.cfg.algorithm.reward_type,
-            "single_action_dim": self.cfg.actor.model.get("action_dim", 7),
+            "single_action_dim": single_action_dim,
             "logprobs": output_dict["logprobs"],
             "values": output_dict.get("values", None),
             "old_logprobs": prev_logprobs,
@@ -1806,7 +1815,7 @@ class EmbodiedFSDPActor(FSDPModelManager, Worker):
             entropy = reshape_entropy(
                 entropy,
                 entropy_type=self.cfg.algorithm.entropy_type,
-                action_dim=self.cfg.actor.model.get("action_dim", 7),
+                action_dim=single_action_dim,
                 batch_size=output_dict["logprobs"].shape[0],
             )
             entropy_loss = masked_mean(entropy, mask=loss_mask)

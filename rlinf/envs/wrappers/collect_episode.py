@@ -103,6 +103,10 @@ class CollectEpisode(gym.Wrapper):
             (N = sum of episodes across pre-existing shards) so the in-progress
             write never touches previously-finalized data. Ignored for pickle.
             Defaults to False.
+        max_episodes_per_env: Stop recording an environment after this many
+            complete episodes. The wrapped environment may continue stepping;
+            this bounds fixed evaluation suites to exactly one trajectory per
+            vectorized scene. ``None`` records without a per-environment cap.
     """
 
     def __init__(
@@ -118,6 +122,7 @@ class CollectEpisode(gym.Wrapper):
         only_success: bool = False,
         finalize_interval: int = 100,
         resume: bool = False,
+        max_episodes_per_env: Optional[int] = None,
     ):
         if isinstance(env, gym.Env):
             super().__init__(env)
@@ -139,6 +144,10 @@ class CollectEpisode(gym.Wrapper):
         self.fps = fps
         self.only_success = only_success
         self.finalize_interval = finalize_interval
+        if max_episodes_per_env is not None and max_episodes_per_env <= 0:
+            raise ValueError("max_episodes_per_env must be positive or None")
+        self.max_episodes_per_env = max_episodes_per_env
+        self._completed_episodes = [0] * num_envs
 
         self._preexisting_episode_count = 0
         self._next_shard_id = 0
@@ -330,6 +339,8 @@ class CollectEpisode(gym.Wrapper):
     def _record_reset_obs(self, obs) -> None:
         """Record the initial observation from reset into every env's buffer."""
         for env_idx in range(self.num_envs):
+            if self._collection_complete(env_idx):
+                continue
             self._seed_reset_frame(env_idx, self._slice_copy(obs, env_idx))
 
     @staticmethod
@@ -352,6 +363,8 @@ class CollectEpisode(gym.Wrapper):
             info_no_reset.pop("final_info")
 
         for env_idx in range(self.num_envs):
+            if self._collection_complete(env_idx):
+                continue
             # Auto-reset envs store the pre-reset obs in info["final_observation"];
             # the current `obs` is the post-reset obs for the *next* episode.
             # Only use final_observation for envs that are actually done this step.
@@ -424,12 +437,15 @@ class CollectEpisode(gym.Wrapper):
     def _maybe_flush(self, terminated, truncated) -> None:
         """Save finished episodes and reset their buffers."""
         for env_idx in range(self.num_envs):
+            if self._collection_complete(env_idx):
+                continue
             is_success = self._get_episode_success(self._buffers[env_idx], env_idx)
             done_by_term = self._scalar_flag(terminated, env_idx)
             done_by_trunc = self._scalar_flag(truncated, env_idx)
             if self.only_success:
                 if is_success and done_by_term:
                     self._flush_episode(env_idx, is_success)
+                    self._completed_episodes[env_idx] += 1
                     self._reset_env_buffer(env_idx)
                 else:
                     if done_by_trunc:
@@ -437,7 +453,14 @@ class CollectEpisode(gym.Wrapper):
             else:
                 if done_by_term or done_by_trunc:
                     self._flush_episode(env_idx, is_success)
+                    self._completed_episodes[env_idx] += 1
                     self._reset_env_buffer(env_idx)
+
+    def _collection_complete(self, env_idx: int) -> bool:
+        return (
+            self.max_episodes_per_env is not None
+            and self._completed_episodes[env_idx] >= self.max_episodes_per_env
+        )
 
     def _flush_episode(self, env_idx: int, is_success: bool) -> None:
         """Dispatch a completed episode to the appropriate format writer."""
@@ -633,9 +656,12 @@ class CollectEpisode(gym.Wrapper):
             return
         self._wait_futures()
         with self._lerobot_lock:
-            if self._lerobot_writer is not None:
+            if (
+                self._lerobot_writer is not None
+                and self._lerobot_writer.dataset is not None
+            ):
                 self._lerobot_writer.finalize()
-                self._lerobot_writer = None
+            self._lerobot_writer = None
 
     def _write_pickle(self, save_path: str, episode_data: dict) -> None:
         with open(save_path, "wb") as f:

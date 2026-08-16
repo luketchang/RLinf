@@ -88,6 +88,19 @@ logger = logging.getLogger(__name__)
 
 # Maps LeRobot dataset keys to value model observation format
 KEY_MAPPINGS = {
+    "so101": {
+        # Canonical teleoperation dataset.
+        "observation.images.external_D455": "observation/image",
+        "observation.images.ego": "observation/wrist_image",
+        "observation.state": "observation/state",
+        # RLinf collection dataset and common LeRobot aliases.
+        "observation.images.image": "observation/image",
+        "observation.images.wrist_image": "observation/wrist_image",
+        "image": "observation/image",
+        "wrist_image": "observation/wrist_image",
+        "state": "observation/state",
+        "task": "prompt",
+    },
     "franka": {
         # Multi-cam format (front_cam + wrist_cam)
         "observation.images.front_cam": "observation/images/front_cam",

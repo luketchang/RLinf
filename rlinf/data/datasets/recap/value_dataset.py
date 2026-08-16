@@ -41,7 +41,11 @@ from openpi.transforms import DataTransformFn
 from torch.utils.data import Dataset
 
 from rlinf.data.storage.lerobot import episode_boundaries
-from rlinf.models.embodiment.openpi.policies import franka_policy, libero_policy
+from rlinf.models.embodiment.openpi.policies import (
+    franka_policy,
+    libero_policy,
+    so101_vials_policy,
+)
 
 from .common import BaseDataLoaderImpl, ReCapMixtureDataset
 from .utils import (
@@ -59,6 +63,9 @@ _MODEL_TYPE_MAP = {
 }
 
 _REPACK_KEYS = {
+    # SO-101 uses SO101VialsRepack rather than this static map so both the
+    # canonical teleoperation and RLinf rollout schemas are accepted.
+    "so101": {},
     "libero": {
         "observation/image": "image",
         "observation/wrist_image": "wrist_image",
@@ -318,7 +325,10 @@ class ValueDataset(Dataset):
                 f"Unknown robot type: {robot_type}. "
                 f"Available: {list(_REPACK_KEYS.keys())}"
             )
-        transforms_list.append(_openpi_transforms.RepackTransform(repack_keys))
+        if robot == "so101":
+            transforms_list.append(so101_vials_policy.SO101VialsRepack())
+        else:
+            transforms_list.append(_openpi_transforms.RepackTransform(repack_keys))
 
         if robot in ("libero", "libero_v2"):
             transforms_list.append(
@@ -330,6 +340,10 @@ class ValueDataset(Dataset):
                     action_dim=action_dim,
                     model_type=model_type_enum,
                 )
+            )
+        elif robot == "so101":
+            transforms_list.append(
+                so101_vials_policy.SO101VialsInputs(model_type=model_type_enum)
             )
 
         transforms_list.append(_openpi_transforms.InjectDefaultPrompt(default_prompt))

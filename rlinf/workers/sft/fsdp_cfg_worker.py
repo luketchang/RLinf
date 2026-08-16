@@ -55,6 +55,33 @@ except ImportError:
     pass
 
 
+def _resolve_action_sequence_keys(
+    configured_keys: tuple[str, ...] | list[str],
+    dataset_features: dict[str, Any],
+) -> tuple[str, ...]:
+    """Resolve LeRobot's singular/plural action schema at the data boundary.
+
+    Canonical SO-101 teleoperation datasets use ``action`` while RLinf's
+    episode collector writes ``actions``. Both carry the same semantic 6-D
+    commands. The robot transform already accepts both; delta timestamps must
+    use the key that is actually present in each dataset.
+    """
+    resolved: list[str] = []
+    for key in configured_keys:
+        if key in dataset_features:
+            resolved.append(key)
+            continue
+        alias = {"action": "actions", "actions": "action"}.get(key)
+        if alias is not None and alias in dataset_features:
+            resolved.append(alias)
+            continue
+        raise KeyError(
+            f"Action sequence key {key!r} is absent from dataset features "
+            f"{sorted(dataset_features)}"
+        )
+    return tuple(resolved)
+
+
 class FSDPCfgWorker(FSDPSftWorker):
     """FSDP worker for CFG (Classifier-Free Guidance) training.
 
@@ -177,6 +204,10 @@ class FSDPCfgWorker(FSDPSftWorker):
             dataset_meta = lerobot_dataset.LeRobotDatasetMetadata(
                 data_path, root=dataset_root
             )
+            action_sequence_keys = _resolve_action_sequence_keys(
+                data_config.action_sequence_keys,
+                dataset_meta.features,
+            )
             base_dataset = lerobot_dataset.LeRobotDataset(
                 data_path,
                 root=dataset_root,
@@ -185,7 +216,7 @@ class FSDPCfgWorker(FSDPSftWorker):
                     key: [
                         t / dataset_meta.fps for t in range(config.model.action_horizon)
                     ]
-                    for key in data_config.action_sequence_keys
+                    for key in action_sequence_keys
                 },
             )
 

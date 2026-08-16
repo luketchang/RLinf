@@ -421,6 +421,10 @@ class EnvWorker(Worker):
                     finalize_interval=getattr(
                         env_cfg.data_collection, "finalize_interval", 100
                     ),
+                    resume=getattr(env_cfg.data_collection, "resume", False),
+                    max_episodes_per_env=getattr(
+                        env_cfg.data_collection, "max_episodes_per_env", None
+                    ),
                 )
             env_list.append(env)
         return env_list

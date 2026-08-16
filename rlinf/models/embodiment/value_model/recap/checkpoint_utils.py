@@ -151,7 +151,11 @@ def build_input_transforms(
     import openpi.models.model as _openpi_model
     import openpi.transforms as _openpi_transforms
 
-    from rlinf.models.embodiment.openpi.policies import franka_policy, libero_policy
+    from rlinf.models.embodiment.openpi.policies import (
+        franka_policy,
+        libero_policy,
+        so101_vials_policy,
+    )
 
     _mt_map = {
         "pi0": _openpi_model.ModelType.PI0,
@@ -172,6 +176,14 @@ def build_input_transforms(
             franka_policy.FrankaEEInputs(
                 action_dim=action_dim, model_type=model_type_enum
             )
+        )
+
+    elif env_type == "so101":
+        input_transforms.append(
+            _openpi_transforms.InjectDefaultPrompt(default_prompt)
+        )
+        input_transforms.append(
+            so101_vials_policy.SO101VialsInputs(model_type=model_type_enum)
         )
 
     else:

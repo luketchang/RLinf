@@ -1,0 +1,23 @@
+# Compute one-step costs and dynamic returns for the SO-101 RECAP datasets.
+# Dataset paths are supplied by the operator launcher.
+
+data:
+  data_root: null
+  train_data_paths:
+    - dataset_path: /path/to/so101_sft_dataset
+      type: sft
+    - dataset_path: /path/to/so101_rollout_dataset
+      type: rollout
+
+  dataset_type: "sft"
+  gamma: 1.0
+  failure_reward: -300.0
+  tag: so101_recap
+  num_workers: 16
+
+hydra:
+  run:
+    dir: .
+  output_subdir: null
+  job:
+    chdir: false

@@ -1,0 +1,48 @@
+# Score SO-101 frames with a trained RECAP value model and label advantages.
+
+defaults:
+  - model/recap_value_model@advantage.model
+
+advantage:
+  value_checkpoint: /path/to/so101_value_checkpoint
+  batch_size: 256
+  flush_interval: 32
+  num_dataloader_workers_per_gpu: 8
+  prefetch_factor: 2
+  discount_next_value: true
+  positive_quantile: 0.3
+  tag: so101_recap
+  returns_tag: so101_recap
+  model:
+    critic_expert_variant: "gemma_1m"
+    tokenizer_path: /path/to/gemma-3-270m
+    siglip_path: /path/to/siglip2-so400m-patch14-224
+    gemma3_path: /path/to/gemma-3-270m
+
+data:
+  model_type: "pi05"
+  train_data_paths:
+    - dataset_path: "/path/to/so101_sft_dataset"
+      robot_type: "so101"
+      type: "sft"
+      weight: 1.0
+    - dataset_path: "/path/to/so101_rollout_dataset"
+      robot_type: "so101"
+      type: "rollout"
+      weight: 1.0
+  advantage_lookahead_step: 16
+  gamma: 1.0
+
+distributed:
+  enabled: true
+  backend: "nccl"
+  timeout: 3600
+
+hydra:
+  run:
+    dir: .
+  output_subdir: null
+  searchpath:
+    - file://${oc.env:REPO_PATH}/examples/offline_rl/config/
+  job:
+    chdir: false

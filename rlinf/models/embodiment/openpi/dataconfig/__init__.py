@@ -73,8 +73,32 @@ from rlinf.models.embodiment.openpi.dataconfig.robocasa_dataconfig import (
 from rlinf.models.embodiment.openpi.dataconfig.robotwin_aloha_dataconfig import (
     LeRobotAlohaDataConfig,
 )
+from rlinf.models.embodiment.openpi.dataconfig.so101_vials_dataconfig import (
+    LeRobotSO101VialsDataConfig,
+)
 
 _CONFIGS = [
+    TrainConfig(
+        name="pi05_so101_vials",
+        model=pi0_config.Pi0Config(
+            pi05=True,
+            action_dim=32,
+            action_horizon=50,
+            max_token_len=200,
+            discrete_state_input=True,
+        ),
+        data=LeRobotSO101VialsDataConfig(
+            repo_id="ltchang/so101_teleop_vials_clean",
+            base_config=DataConfig(prompt_from_task=False),
+            assets=AssetsConfig(
+                assets_dir="checkpoints/torch/pi05_so101_vials/assets"
+            ),
+        ),
+        pytorch_weight_path="checkpoints/torch/pi05_so101_vials",
+        batch_size=32,
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=0.999,
+    ),
     TrainConfig(
         name="pi0_libero",
         model=pi0_config.Pi0Config(),

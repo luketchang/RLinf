@@ -51,6 +51,20 @@ logger = logging.getLogger(__name__)
 _READ_COLUMNS = ["episode_index", "frame_index", "is_success", "task_index", "task"]
 
 
+def _success_scalar(value: object) -> bool:
+    """Normalize scalar and shape-(1,) LeRobot success values.
+
+    RLinf's collector declares ``is_success`` with shape ``(1,)``. Depending on
+    the LeRobot/PyArrow version, ``to_pylist`` therefore yields either a bool or
+    ``[bool]``. Calling ``bool([False])`` is true and would silently label every
+    rollout as successful, destroying RECAP's return supervision.
+    """
+    array = np.asarray(value)
+    if array.size != 1:
+        raise ValueError(f"Expected one is_success value, received shape {array.shape}")
+    return bool(array.reshape(-1)[0])
+
+
 def compute_returns_for_episode(
     episode_length: int,
     is_success: bool,
@@ -164,7 +178,7 @@ def _process_single_parquet(
         if dataset_type == "sft":
             is_success = True
         else:
-            is_success = bool(is_success_col[ep_end - 1])
+            is_success = _success_scalar(is_success_col[ep_end - 1])
 
         ep_returns, ep_rewards = compute_returns_for_episode(
             episode_length=ep_length,

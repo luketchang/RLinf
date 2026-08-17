@@ -120,7 +120,7 @@ class SO101VialsInputs(transforms.DataTransformFn):
         }
         if "actions" in data:
             inputs["actions"] = np.asarray(data["actions"], dtype=np.float32)
-        if "prompt" in data:
+        if data.get("prompt") is not None:
             inputs["prompt"] = data["prompt"]
         return inputs
 

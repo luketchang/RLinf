@@ -90,6 +90,19 @@ def test_so101_openpi_inputs_use_two_real_cameras_and_six_actions():
     np.testing.assert_array_equal(output["actions"], padded_actions[:, :6])
 
 
+def test_so101_openpi_inputs_omit_nullable_prompt():
+    transformed = SO101VialsInputs(model_type=model_lib.ModelType.PI05)(
+        {
+            "observation/image": _image(1),
+            "observation/wrist_image": _image(2),
+            "observation/state": np.arange(6, dtype=np.float32),
+            "prompt": None,
+        }
+    )
+
+    assert "prompt" not in transformed
+
+
 def test_so101_openpi_keeps_padded_internal_action_width():
     config = get_openpi_config("pi05_so101_vials")
 

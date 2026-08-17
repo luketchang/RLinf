@@ -37,6 +37,7 @@ from rlinf.data.datasets.recap.cfg_model import (
 )
 from rlinf.data.datasets.recap.utils import (
     cast_image_features,
+    load_task_descriptions,
 )
 from rlinf.hybrid_engines.fsdp.fsdp_model_manager import FSDPModelManager
 from rlinf.scheduler import Cluster, Worker
@@ -228,7 +229,11 @@ class FSDPCfgWorker(FSDPSftWorker):
             if data_config.prompt_from_task:
                 base_dataset = openpi_data_loader.TransformedDataset(
                     base_dataset,
-                    [transforms.PromptFromLeRobotTask(dataset_meta.tasks)],
+                    [
+                        transforms.PromptFromLeRobotTask(
+                            load_task_descriptions(dataset_root)
+                        )
+                    ],
                 )
 
             # RepackTransform strips all keys except OpenPI required ones,

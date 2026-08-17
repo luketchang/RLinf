@@ -148,6 +148,13 @@ class CollectEpisode(gym.Wrapper):
             raise ValueError("max_episodes_per_env must be positive or None")
         self.max_episodes_per_env = max_episodes_per_env
         self._completed_episodes = [0] * num_envs
+        # Non-auto-reset vector environments can keep returning terminal
+        # flags for an environment while the rest of the action chunk (or
+        # vector batch) finishes.  Once an episode is flushed, ignore those
+        # repeated transitions until the next explicit reset.  Auto-reset
+        # environments provide a pending post-reset observation and therefore
+        # do not enter this state.
+        self._awaiting_reset = [False] * num_envs
 
         self._preexisting_episode_count = 0
         self._next_shard_id = 0
@@ -220,6 +227,7 @@ class CollectEpisode(gym.Wrapper):
         self._episode_success = [False] * self.num_envs
         self._pending_obs = [None] * self.num_envs
         self._pending_info = [None] * self.num_envs
+        self._awaiting_reset = [False] * self.num_envs
 
         try:
             obs, info = self.env.reset(seed=seed, options=options)
@@ -351,7 +359,7 @@ class CollectEpisode(gym.Wrapper):
     def _record_reset_obs(self, obs) -> None:
         """Record the initial observation from reset into every env's buffer."""
         for env_idx in range(self.num_envs):
-            if self._collection_complete(env_idx):
+            if self._collection_complete(env_idx) or self._awaiting_reset[env_idx]:
                 continue
             self._seed_reset_frame(env_idx, self._slice_copy(obs, env_idx))
 
@@ -375,7 +383,7 @@ class CollectEpisode(gym.Wrapper):
             info_no_reset.pop("final_info")
 
         for env_idx in range(self.num_envs):
-            if self._collection_complete(env_idx):
+            if self._collection_complete(env_idx) or self._awaiting_reset[env_idx]:
                 continue
             # Auto-reset envs store the pre-reset obs in info["final_observation"];
             # the current `obs` is the post-reset obs for the *next* episode.
@@ -449,7 +457,7 @@ class CollectEpisode(gym.Wrapper):
     def _maybe_flush(self, terminated, truncated) -> None:
         """Save finished episodes and reset their buffers."""
         for env_idx in range(self.num_envs):
-            if self._collection_complete(env_idx):
+            if self._collection_complete(env_idx) or self._awaiting_reset[env_idx]:
                 continue
             is_success = self._get_episode_success(self._buffers[env_idx], env_idx)
             done_by_term = self._scalar_flag(terminated, env_idx)
@@ -458,15 +466,21 @@ class CollectEpisode(gym.Wrapper):
                 if is_success and done_by_term:
                     self._flush_episode(env_idx, is_success)
                     self._completed_episodes[env_idx] += 1
+                    auto_reset = self._pending_obs[env_idx] is not None
                     self._reset_env_buffer(env_idx)
+                    self._awaiting_reset[env_idx] = not auto_reset
                 else:
                     if done_by_trunc:
+                        auto_reset = self._pending_obs[env_idx] is not None
                         self._reset_env_buffer(env_idx)
+                        self._awaiting_reset[env_idx] = not auto_reset
             else:
                 if done_by_term or done_by_trunc:
                     self._flush_episode(env_idx, is_success)
                     self._completed_episodes[env_idx] += 1
+                    auto_reset = self._pending_obs[env_idx] is not None
                     self._reset_env_buffer(env_idx)
+                    self._awaiting_reset[env_idx] = not auto_reset
 
     def _collection_complete(self, env_idx: int) -> bool:
         return (

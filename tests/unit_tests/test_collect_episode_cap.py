@@ -63,6 +63,56 @@ def test_collection_rejects_non_positive_episode_cap(tmp_path):
         raise AssertionError("expected a non-positive episode cap to fail")
 
 
+def test_non_auto_reset_terminal_env_waits_for_explicit_reset(tmp_path, monkeypatch):
+    """Repeated terminal substeps must not create a second partial episode.
+
+    Vector environments with auto-reset disabled continue stepping all scenes
+    until the slowest scene finishes.  A scene that terminates early can
+    therefore report terminal state more than once within an action chunk.
+    """
+    wrapper = CollectEpisode(
+        _DummyEnv(),
+        save_dir=str(tmp_path),
+        num_envs=1,
+        max_episodes_per_env=2,
+    )
+    flushed = []
+    monkeypatch.setattr(
+        wrapper,
+        "_flush_episode",
+        lambda env_idx, is_success: flushed.append((env_idx, is_success)),
+    )
+    wrapper.reset()
+
+    action = np.ones((1, 6), dtype=np.float32)
+    obs = {"state": np.ones((1, 6), dtype=np.float32)}
+    reward = np.zeros(1, dtype=np.float32)
+    terminated = np.ones(1, dtype=bool)
+    truncated = np.zeros(1, dtype=bool)
+
+    wrapper._record_step(action, obs, reward, terminated, truncated, {})
+    wrapper._maybe_flush(terminated, truncated)
+    assert flushed == [(0, False)]
+    assert wrapper._completed_episodes == [1]
+    assert wrapper._awaiting_reset == [True]
+
+    # This is the next substep from the same already-terminal environment.
+    wrapper._record_step(action, obs, reward, terminated, truncated, {})
+    wrapper._maybe_flush(terminated, truncated)
+    assert flushed == [(0, False)]
+    assert wrapper._completed_episodes == [1]
+    assert wrapper._buffers[0]["actions"] == []
+
+    # A full vector reset starts the next scheduled episode.
+    wrapper.reset()
+    assert wrapper._awaiting_reset == [False]
+    wrapper._record_step(action, obs, reward, terminated, truncated, {})
+    wrapper._maybe_flush(terminated, truncated)
+    assert flushed == [(0, False), (0, False)]
+    assert wrapper._completed_episodes == [2]
+    wrapper.close()
+
+
 def test_close_accepts_periodically_finalized_lerobot_writer(tmp_path):
     class _FinalizedWriter:
         dataset = None

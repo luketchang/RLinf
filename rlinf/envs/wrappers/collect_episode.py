@@ -302,14 +302,26 @@ class CollectEpisode(gym.Wrapper):
         if self._closed:
             return None
         self._closed = True
-        self._finalize_lerobot()
-        self._wait_futures()
+        self.finalize_collection()
         if self._executor is not None:
             self._executor.shutdown(wait=True)
             self._executor = None
         if hasattr(self.env, "close"):
             return self.env.close()
         return None
+
+    def finalize_collection(self) -> None:
+        """Drain pending exports and make the current dataset readable.
+
+        Unlike :meth:`close`, this intentionally leaves the wrapped
+        environment and export executor alive so a long-running worker may
+        collect another evaluation suite later.  The LeRobot writer starts a
+        fresh shard on the next episode after finalization.
+        """
+        if self.export_format == "lerobot":
+            self._finalize_lerobot()
+        else:
+            self._wait_futures()
 
     def _new_buffer(self) -> dict[str, list]:
         return {

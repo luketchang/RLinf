@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from concurrent.futures import Future
+
 import gymnasium as gym
 import numpy as np
 
@@ -77,3 +79,34 @@ def test_close_accepts_periodically_finalized_lerobot_writer(tmp_path):
     wrapper.close()
 
     assert wrapper._lerobot_writer is None
+
+
+def test_finalize_collection_drains_and_finalizes_without_closing(tmp_path):
+    class _Writer:
+        dataset = object()
+
+        def __init__(self):
+            self.finalized = False
+
+        def finalize(self):
+            self.finalized = True
+
+    wrapper = CollectEpisode(
+        _DummyEnv(),
+        save_dir=str(tmp_path),
+        export_format="lerobot",
+    )
+    writer = _Writer()
+    wrapper._lerobot_writer = writer
+    completed = Future()
+    completed.set_result(None)
+    wrapper._futures = [completed]
+
+    wrapper.finalize_collection()
+
+    assert writer.finalized
+    assert wrapper._lerobot_writer is None
+    assert wrapper._futures == []
+    assert wrapper._executor is not None
+    assert not wrapper._closed
+    wrapper.close()

@@ -1424,6 +1424,16 @@ class EnvWorker(Worker):
                 )
                 if callable(wait_for_videos):
                     wait_for_videos()
+        # Episode export is asynchronous for both pickle and LeRobot output.
+        # Do not report evaluation completion until all writers have drained
+        # and the current LeRobot shard metadata/footer is finalized; callers
+        # may validate or upload the dataset immediately after evaluate().
+        for stage_id in range(self.stage_num):
+            finalize_collection = get_env_attr(
+                self.eval_env_list[stage_id], "finalize_collection"
+            )
+            if callable(finalize_collection):
+                finalize_collection()
         for stage_id in range(self.stage_num):
             if self.eval_enable_offload:
                 get_env_attr(self.eval_env_list[stage_id], "offload")()

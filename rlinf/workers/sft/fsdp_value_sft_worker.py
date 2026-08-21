@@ -421,6 +421,9 @@ class FSDPValueSftWorker(FSDPModelManager, Worker):
                 action_dim=eval_entry.get("action_dim", shared["action_dim"]),
                 default_prompt=eval_entry.get("default_prompt", None),
                 max_samples=eval_max_samples,
+                max_samples_strategy=eval_entry.get(
+                    "max_samples_strategy", "prefix"
+                ),
                 tag=data_cfg.get("tag", None),
             )
             eval_sampler = None

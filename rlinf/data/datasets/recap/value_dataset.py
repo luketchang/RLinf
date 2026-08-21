@@ -56,6 +56,16 @@ from .utils import (
 
 logger = logging.getLogger(__name__)
 
+
+def uniform_sample_indices(indices: list[int], max_samples: int) -> list[int]:
+    """Return a deterministic, endpoint-inclusive sample over ``indices``."""
+    if max_samples <= 0:
+        raise ValueError(f"max_samples must be positive, got {max_samples}")
+    if len(indices) <= max_samples:
+        return list(indices)
+    positions = np.linspace(0, len(indices) - 1, num=max_samples, dtype=np.int64)
+    return [indices[int(position)] for position in positions]
+
 _MODEL_TYPE_MAP = {
     "pi0": _openpi_model.ModelType.PI0,
     "pi05": _openpi_model.ModelType.PI05,
@@ -220,6 +230,7 @@ class ValueDataset(Dataset):
         return_max: Optional[float] = None,
         normalize_to_minus_one_zero: bool = True,
         max_samples: Optional[int] = None,
+        max_samples_strategy: str = "prefix",
         tag: Optional[str] = None,
         episode_percentage: Optional[float] = None,
         shuffle_episodes: bool = False,
@@ -239,6 +250,11 @@ class ValueDataset(Dataset):
         if unexpected:
             logger.warning(f"ValueDataset ignoring unexpected kwargs: {unexpected}")
 
+        if max_samples_strategy not in {"prefix", "uniform"}:
+            raise ValueError(
+                "max_samples_strategy must be 'prefix' or 'uniform', got "
+                f"{max_samples_strategy!r}"
+            )
         self.max_samples = max_samples
         local_path = Path(dataset_path).absolute()
 
@@ -290,6 +306,22 @@ class ValueDataset(Dataset):
                 i for ep in sorted(selected) for i in range(ep_starts[ep], ep_ends[ep])
             ]
 
+        # A prefix is useful for quick debugging, but it is a biased validation
+        # sample for episodic robotics data.  Uniform sampling deterministically
+        # covers the complete selected episode range while keeping evaluation
+        # bounded.
+        candidate_indices = (
+            self._indices if self._indices is not None else list(range(len(self._base)))
+        )
+        if (
+            max_samples is not None
+            and max_samples > 0
+            and len(candidate_indices) > max_samples
+            and max_samples_strategy == "uniform"
+        ):
+            self._indices = uniform_sample_indices(candidate_indices, max_samples)
+            self.max_samples = None
+
         self._transform = self._build_transform(
             robot_type=robot_type,
             model_type=model_type,
@@ -310,7 +342,12 @@ class ValueDataset(Dataset):
         )
 
         n = len(self._indices) if self._indices else len(self._base)
-        logger.info(f"ValueDataset: {dataset_path}, {min(n, max_samples or n)} samples")
+        logger.info(
+            "ValueDataset: %s, %d samples (max_samples_strategy=%s)",
+            dataset_path,
+            min(n, self.max_samples or n),
+            max_samples_strategy,
+        )
 
     @staticmethod
     def _build_transform(robot_type, model_type, action_dim, default_prompt):

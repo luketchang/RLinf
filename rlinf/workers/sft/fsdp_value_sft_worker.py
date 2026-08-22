@@ -74,6 +74,16 @@ class FSDPValueSftWorker(FSDPModelManager, Worker):
             self.offload_param_and_grad()
             self.offload_optimizer()
 
+    def reset_optimizer_and_scheduler(self) -> None:
+        """Discard loaded optimizer state while retaining checkpoint weights."""
+        self.optimizer = self.build_optimizer(model=self.model)
+        self.lr_scheduler = self.build_lr_scheduler(
+            optimizer=self.optimizer,
+            optim_config=self._cfg.optim,
+        )
+        self.optimizer_steps = 0
+        self.optimizer.zero_grad(set_to_none=True)
+
     def model_provider_func(self) -> torch.nn.Module:
         return get_model(self.cfg.actor.model)
 
@@ -339,8 +349,31 @@ class FSDPValueSftWorker(FSDPModelManager, Worker):
                 f"[ValueSFT] Loaded: {ds_path}  (type={ds_type}, {len(ds)} samples, weight={weight})"
             )
 
+        sampling_mode = data_cfg.get("sampling_mode", "mixture")
+        if sampling_mode not in {"mixture", "concat"}:
+            raise ValueError(
+                "data.sampling_mode must be 'mixture' or 'concat', got "
+                f"{sampling_mode!r}"
+            )
+
         if len(datasets_with_weights) == 1:
             dataset = datasets_with_weights[0][0]
+        elif sampling_mode == "concat":
+            non_unit_weights = [
+                weight for _, weight in datasets_with_weights if weight != 1.0
+            ]
+            if non_unit_weights:
+                raise ValueError(
+                    "data.sampling_mode='concat' requires every dataset weight "
+                    "to equal 1.0; use 'mixture' for weighted sampling"
+                )
+            dataset = torch.utils.data.ConcatDataset(
+                [ds for ds, _ in datasets_with_weights]
+            )
+            self.logger.info(
+                "[ValueSFT] Concatenating datasets for shuffled, "
+                "without-replacement epoch traversal"
+            )
         else:
             dataset = ValueMixtureDataset(
                 datasets=datasets_with_weights,

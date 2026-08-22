@@ -72,7 +72,15 @@ class SFTRunner:
             f"resume_dir {actor_checkpoint_path} does not exist."
         )
         self.actor.load_checkpoint(actor_checkpoint_path).wait()
-        self.global_step = int(resume_dir.split("global_step_")[-1])
+        if self.cfg.runner.get("resume_weights_only", False):
+            self.actor.reset_optimizer_and_scheduler().wait()
+            self.global_step = 0
+            logger.info(
+                "Initialized weights from %s with a fresh optimizer and scheduler",
+                actor_checkpoint_path,
+            )
+        else:
+            self.global_step = int(resume_dir.split("global_step_")[-1])
 
     def run(self) -> None:
         start_step = self.global_step
@@ -111,10 +119,10 @@ class SFTRunner:
                     eval_metrics = eval_handle.wait()
 
                     if self.early_stop is not None:
-                        should_stop, best_val_acc_improved = self.early_stop.update(
+                        should_stop, monitored_metric_improved = self.early_stop.update(
                             eval_metrics[0]
                         )
-                        if best_val_acc_improved:
+                        if monitored_metric_improved:
                             self._save_checkpoint(is_best=True)
 
             time_metrics = self.timer.consume_durations()
@@ -147,9 +155,14 @@ class SFTRunner:
             if should_stop:
                 break
 
-        if self.early_stop is not None and self.early_stop.best_val_acc > 0:
+        if self.early_stop is not None and self.early_stop.best_monitored_value not in (
+            float("inf"),
+            -float("inf"),
+        ):
             logger.info(
-                f"Early stopping triggered! Best val_acc: {self.early_stop.best_val_acc:.4f}"
+                "Training complete. Best "
+                f"{self.early_stop.monitor}: "
+                f"{self.early_stop.best_monitored_value:.4f}"
             )
         self.metric_logger.finish()
 
@@ -193,7 +206,9 @@ class SFTRunner:
         self.actor.save_checkpoint(actor_save_path, self.global_step).wait()
         if is_best and self.early_stop is not None:
             logger.info(
-                f"Saved best model (val_acc={self.early_stop.best_val_acc:.4f}) to {base_output_dir}"
+                "Saved best model "
+                f"({self.early_stop.monitor}="
+                f"{self.early_stop.best_monitored_value:.4f}) to {base_output_dir}"
             )
 
     def set_max_steps(self) -> None:

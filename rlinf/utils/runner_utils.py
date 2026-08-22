@@ -94,15 +94,28 @@ class EarlyStopController:
         self.patience = cfg.get("patience", 5)
         self.min_delta = cfg.get("min_delta", 0.001)
         self.monitor = cfg.get("monitor", "val_loss")
+        self.mode = cfg.get("mode", "min" if self.monitor == "val_loss" else "max")
+        if self.mode not in {"min", "max"}:
+            raise ValueError(f"early_stop.mode must be 'min' or 'max', got {self.mode!r}")
 
         self.counter = 0
         self.best_val_loss = float("inf")
         self.best_val_acc = 0.0
+        self.best_monitored_value = float("inf") if self.mode == "min" else -float("inf")
 
     def update(self, metrics: dict[str, float]) -> tuple[bool, bool]:
         """Return (should_stop, best_val_acc_improved)."""
         improved_for_monitor = False
         best_val_acc_improved = False
+
+        if self.monitor in metrics:
+            value = metrics[self.monitor]
+            if self.mode == "min":
+                improved_for_monitor = value < self.best_monitored_value - self.min_delta
+            else:
+                improved_for_monitor = value > self.best_monitored_value + self.min_delta
+            if improved_for_monitor:
+                self.best_monitored_value = value
 
         if "val_loss" in metrics:
             val_loss = metrics["val_loss"]
@@ -120,11 +133,11 @@ class EarlyStopController:
                     improved_for_monitor = True
 
         if not self.enabled:
-            return False, best_val_acc_improved
+            return False, improved_for_monitor
 
-        has_monitored_metrics = "val_loss" in metrics or "val_accuracy" in metrics
+        has_monitored_metrics = self.monitor in metrics
         if not has_monitored_metrics:
-            return False, best_val_acc_improved
+            return False, False
 
         if improved_for_monitor:
             self.counter = 0
@@ -136,6 +149,6 @@ class EarlyStopController:
             logger.info(
                 f"Early stopping triggered! No improvement for {self.patience} checks."
             )
-            return True, best_val_acc_improved
+            return True, improved_for_monitor
 
-        return False, best_val_acc_improved
+        return False, improved_for_monitor
